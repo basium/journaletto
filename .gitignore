@@ -1,0 +1,11 @@
+# Local, machine-specific config (see config.example.yaml for the template)
+config.yaml
+
+# Local journal data (raw entries, SQLite DB, exports)
+data/
+
+# Go build artifacts
+/bin/
+*.exe
+*.test
+*.out
