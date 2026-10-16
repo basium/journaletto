@@ -1,31 +1,33 @@
 # Environment conventions
 
 Owned by DevOps & Architect (keep it current via env PRs). Developers read it when their task touches runtime files.
+Stack: Go (single static binary, embedded SQLite via modernc, server-rendered templates + htmx).
 
 ## Local development
-- `npm install` → `npm run dev` (hot reload) for day-to-day work.
-- `docker compose up` (from `compose.yml`) runs the app plus its dependencies locally when the stack needs services.
-- Config only through env vars; `.env.example` lists every variable with a safe default. Real `.env` is never committed.
+- `go run ./cmd/journaletto` for day-to-day work; `npm run check` is the CI gate (wraps the Go checks).
+- `docker compose up` (from `compose.yml`) runs the app with a named volume on `/data`. No external services: SQLite is embedded; `compose.ci.yml` is only an overlay that adds `.env.ci`.
+- Config only through env vars (and optional YAML, see `config.example.yaml`); `.env.example` lists every variable with a safe default. Real `.env` is never committed.
 
 ## Docker
-- One multi-stage `Dockerfile`: `deps` → `build` → `runtime`.
-- `runtime` target: production deps only, non-root user, `NODE_ENV=production`, exposes one port, `HEALTHCHECK` calling the health endpoint (e.g. `CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`).
-- Health endpoint: `GET /health` → 200 with `{ status, version, commit }`. Non-HTTP apps: the closest equivalent the tech spec defines (`--version` for a CLI, a queue/db ping for a worker).
-- The image must build and run in any CI system with plain `docker build --target runtime .` — that is the human's deployment artifact.
+- One multi-stage `Dockerfile`: `deps` (go mod download) -> `build` (`CGO_ENABLED=0`, `-trimpath`) -> `runtime` (alpine, non-root `app`, data in `/data` volume).
+- `runtime` target: one port (3000), config by env vars only, `HEALTHCHECK` runs `journaletto -healthcheck` (probes `/healthz`; no curl in the image).
+- Health endpoint: `GET /healthz` -> 200 with `{ status, version, commit }`. `VERSION`/`COMMIT` are build args (default `dev`/`unknown`); `pipeline-check.sh` and `compose.yml` pass them (from git / env). The human's own pipeline should pass `--build-arg VERSION=... --build-arg COMMIT=...`.
+- The image must build and run in any CI system with plain `docker build --target runtime .` - that is the human's deployment artifact.
+- Keep the `golang:<ver>-alpine` tag in the `Dockerfile` in sync with the `go` line in `go.mod`.
+- Runtime must not depend on third-party CDNs. htmx is currently loaded from unpkg without SRI; vendor it (go:embed) or pin with SRI when the UI work next touches templates.
 
-## Build check (`scripts/pipeline-check.sh`) — same in CI and locally
-1. `docker build --target runtime -t <app>:check .`
-2. If `compose.ci.yml` exists: `docker compose -f compose.ci.yml up -d --wait` (dependencies).
-3. Run the image with `--env-file .env.ci`.
-4. Wait until Docker reports the container **healthy** (90 s timeout).
-5. `BASE_URL=… npm run test:smoke` — 1–3 black-box tests against the running container.
-6. On failure print container logs; always tear down.
-If Docker isn't available it falls back to `npm run build && npm run start` + health check and warns that the Docker path was not verified.
+## Build check (`scripts/pipeline-check.sh`) - same in CI and locally
+1. `docker build --target runtime` (with VERSION/COMMIT build args).
+2. Run the image with `--env-file .env.ci` (no dependency stack).
+3. Wait until Docker reports the container **healthy** (90 s timeout).
+4. `BASE_URL=... npm run test:smoke` (runs `scripts/smoke.sh`) - black-box checks against the running container.
+5. On failure print container logs; always tear down.
+If Docker isn't available it falls back to `go build` + run + health check and warns that the Docker path was not verified.
 
 ## When the build check runs
-- CI: PRs from `env/*` branches, or PRs touching `Dockerfile`, `compose*.yml`, `.env.ci`, `scripts/pipeline-check.sh`, `.github/workflows/**`, `package.json`, lockfile.
+- CI: PRs from `env/*` branches, or PRs touching `Dockerfile`, `compose*.yml`, `.env.ci`, `scripts/pipeline-check.sh`, `.github/workflows/**`, `package.json`, `go.mod`, `go.sum`.
 - Locally: by a developer whose task touched those files; by DevOps in post-merge review under the same rule; by the PL after an env PR merges.
 
 ## CI (`.github/workflows/`)
-- `ci.yml`: install → typecheck → lint → test, every PR and push to main.
+- `ci.yml`: `npm run check` (Go + Node toolchains) on every PR and push to main.
 - `pipeline-check.yml`: the build check under the path/branch rule above. Trivy scan and registry push present, disabled.

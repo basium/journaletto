@@ -3,6 +3,9 @@ services:
     build:
       context: .
       target: runtime
+      args:
+        VERSION: "${VERSION:-dev}"
+        COMMIT: "${COMMIT:-unknown}"
     ports:
       - "${HOST_PORT:-3000}:3000"
     environment:
