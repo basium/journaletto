@@ -1,0 +1,11 @@
+# Copy to config.yaml. Environment variables (see .env.example) override these values.
+port: 3000
+# The single immutable development user id
+dev_user_id: dev-user
+data_root: ./data
+db_path: ./data/journaletto.db
+# fake | local | external
+provider: fake
+max_retries: 3
+# Max size of one journal entry in bytes
+max_entry_bytes: 65536

@@ -1,20 +1,18 @@
 {
-  "name": "claude-boilerplate",
+  "name": "journaletto",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
     "setup": "bash scripts/setup.sh",
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit --pretty false",
-    "lint": "eslint . --quiet",
+    "dev": "go run ./cmd/journaletto",
+    "build": "go build -o bin/journaletto ./cmd/journaletto",
+    "start": "go run ./cmd/journaletto",
     "format": "prettier --write .",
-    "test": "vitest run --reporter=dot --passWithNoTests",
-    "test:smoke": "echo 'No smoke tests yet — the walking-skeleton task (M*-T00) adds them.'",
-    "check": "npm run typecheck && npm run lint && npm run test",
+    "test": "go test ./...",
+    "test:smoke": "bash scripts/smoke.sh",
+    "check": "go vet ./... && go test ./...",
     "pipeline-check": "bash scripts/pipeline-check.sh",
     "board": "node scripts/board.mjs",
     "log": "node scripts/log.mjs",
@@ -23,14 +21,7 @@
     "tokens:blocks": "ccusage blocks --live"
   },
   "devDependencies": {
-    "@eslint/js": "^9.0.0",
-    "@types/node": "^22.0.0",
     "ccusage": "latest",
-    "eslint": "^9.0.0",
-    "prettier": "^3.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.6.0",
-    "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0"
+    "prettier": "^3.0.0"
   }
 }
