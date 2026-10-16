@@ -16,7 +16,7 @@ Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 Module: M1 · 2026-10-14-journal-entry-service
 
 ## M1-T00 · Walking skeleton (Go)
-Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: — · PR: —
+Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: — · PR: #2
 What: A running Go service with `GET /healthz` and a trivial HTMX home page, containerised, with CI green.
 Acceptance:
 - [ ] `npm run test:smoke` starts the compose stack and gets 200 from `/healthz`; `bash scripts/pipeline-check.sh` passes
