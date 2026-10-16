@@ -26,7 +26,7 @@ type Config struct {
 func defaults() Config {
 	return Config{
 		Port: 3000, DevUserID: "dev-user", DataRoot: "./data", DBPath: "./data/journaletto.db",
-		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 65536,
+		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 102400,
 		Version: "dev", Commit: "unknown",
 	}
 }

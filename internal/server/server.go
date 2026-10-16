@@ -35,7 +35,7 @@ type page struct {
 // New returns the application handler.
 func New(cfg config.Config, db *sql.DB) http.Handler {
 	tpl := template.Must(template.ParseFS(templatesFS, "templates/*.html"))
-	svc := &entries.Service{DB: db, DataRoot: cfg.DataRoot, UserID: cfg.DevUserID}
+	svc := &entries.Service{DB: db, DataRoot: cfg.DataRoot, UserID: cfg.DevUserID, MaxBody: cfg.MaxEntryBytes}
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(staticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))

@@ -17,7 +17,8 @@ import (
 
 const (
 	MaxTitle   = 200
-	MaxBody    = 100 * 1024
+	// DefaultMaxBody is used when Service.MaxBody is unset; config.MaxEntryBytes is the source of truth.
+	DefaultMaxBody = 100 * 1024
 	MaxTags    = 100
 	MaxTagLen  = 50
 	dateLayout = "2006-01-02"
@@ -53,6 +54,7 @@ type Service struct {
 	DataRoot string
 	UserID   string
 	Now      func() time.Time
+	MaxBody  int // max description bytes; 0 means DefaultMaxBody
 }
 
 // frontMatter holds only user-authored data; generated data must never be written here.
@@ -68,13 +70,16 @@ type frontMatter struct {
 	Status        string   `yaml:"status"`
 }
 
-func normalize(in Input, now time.Time) (Input, error) {
+func normalize(in Input, now time.Time, maxBody int) (Input, error) {
 	in.Title = strings.TrimSpace(in.Title)
+	if strings.ContainsAny(in.Title, "\r\n  ") {
+		return in, &ValidationError{"title", "must be a single line"}
+	}
 	if n := utf8.RuneCountInString(in.Title); n < 1 || n > MaxTitle {
 		return in, &ValidationError{"title", fmt.Sprintf("must be 1-%d characters", MaxTitle)}
 	}
-	if len(in.Description) > MaxBody {
-		return in, &ValidationError{"description", "must be at most 100 KB"}
+	if len(in.Description) > maxBody {
+		return in, &ValidationError{"description", fmt.Sprintf("must be at most %d bytes", maxBody)}
 	}
 	in.Timezone = strings.TrimSpace(in.Timezone)
 	loc := time.UTC
@@ -91,21 +96,23 @@ func normalize(in Input, now time.Time) (Input, error) {
 	} else if d, err := time.Parse(dateLayout, in.JournalDate); err != nil || d.Format(dateLayout) != in.JournalDate {
 		return in, &ValidationError{"journal_date", "must be YYYY-MM-DD"}
 	}
+	if len(in.Tags) > MaxTags { // raw count, before dedupe
+		return in, &ValidationError{"tags", fmt.Sprintf("at most %d tags", MaxTags)}
+	}
 	seen := map[string]bool{}
 	tags := []string{}
 	for _, t := range in.Tags {
 		t = strings.ToLower(strings.TrimSpace(t))
-		if t == "" || seen[t] {
-			continue
+		if t == "" {
+			continue // blank form fields are ignored
 		}
 		if utf8.RuneCountInString(t) > MaxTagLen {
 			return in, &ValidationError{"tags", fmt.Sprintf("each tag must be 1-%d characters", MaxTagLen)}
 		}
-		seen[t] = true
-		tags = append(tags, t)
-	}
-	if len(tags) > MaxTags {
-		return in, &ValidationError{"tags", fmt.Sprintf("at most %d tags", MaxTags)}
+		if !seen[t] {
+			seen[t] = true
+			tags = append(tags, t)
+		}
 	}
 	in.Tags = tags
 	return in, nil
@@ -119,7 +126,11 @@ func (s *Service) Save(ctx context.Context, in Input) (Entry, error) {
 		now = s.Now
 	}
 	t := now().UTC()
-	in, err := normalize(in, t)
+	maxBody := s.MaxBody
+	if maxBody <= 0 {
+		maxBody = DefaultMaxBody
+	}
+	in, err := normalize(in, t, maxBody)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -140,60 +151,97 @@ func (s *Service) Save(ctx context.Context, in Input) (Entry, error) {
 		content += "\n"
 	}
 
-	tx, err := s.DB.BeginTx(ctx, nil)
+	// Stage the file (incl. fsync) before taking the DB write lock.
+	tmp, err := stage(dir, []byte(content))
 	if err != nil {
 		return Entry{}, err
 	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO entries(id,user_id,title,body,journal_date,created_at,updated_at,timezone,status,processing_status,file_path)
-		VALUES (?,?,?,?,?,?,?,?,'active','pending',?)`,
-		id.String(), s.UserID, in.Title, in.Description, in.JournalDate, ts, ts, in.Timezone, path); err != nil {
+	defer os.Remove(tmp) // no-op after a successful rename
+
+	if err := s.insert(ctx, id.String(), in, ts, path); err != nil {
 		return Entry{}, err
 	}
-	for _, tag := range in.Tags {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO entry_tags(entry_id,user_id,tag) VALUES (?,?,?)`, id.String(), s.UserID, tag); err != nil {
-			return Entry{}, err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO entries_fts(entry_id,title,body,tags) VALUES (?,?,?,?)`,
-		id.String(), in.Title, in.Description, strings.Join(in.Tags, " ")); err != nil {
-		return Entry{}, err
-	}
-	if err := writeAtomic(dir, path, []byte(content)); err != nil {
-		return Entry{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		os.Remove(path)
+	// DB is committed; publish the file. On failure undo the rows so no row lacks a file.
+	if err := os.Rename(tmp, path); err != nil {
+		s.remove(id.String())
 		return Entry{}, err
 	}
 	return Entry{ID: id.String(), Path: path, Status: "pending"}, nil
 }
 
-func writeAtomic(dir, path string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, ".tmp-*")
+func (s *Service) insert(ctx context.Context, id string, in Input, ts, path string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if _, err := f.Write(data); err != nil {
-		f.Close()
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO entries(id,user_id,title,body,journal_date,created_at,updated_at,timezone,status,processing_status,file_path)
+		VALUES (?,?,?,?,?,?,?,?,'active','pending',?)`,
+		id, s.UserID, in.Title, in.Description, in.JournalDate, ts, ts, in.Timezone, path); err != nil {
 		return err
+	}
+	for _, tag := range in.Tags {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO entry_tags(entry_id,user_id,tag) VALUES (?,?,?)`, id, s.UserID, tag); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO entries_fts(entry_id,title,body,tags) VALUES (?,?,?,?)`,
+		id, in.Title, in.Description, strings.Join(in.Tags, " ")); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// remove best-effort deletes a committed entry whose file could not be published.
+func (s *Service) remove(id string) {
+	ctx := context.Background()
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM entries_fts WHERE entry_id=?`,
+		`DELETE FROM entry_tags WHERE entry_id=?`,
+		`DELETE FROM entries WHERE id=?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return
+		}
+	}
+	tx.Commit()
+}
+
+// stage writes data to a synced temp file in dir and returns its path.
+func stage(dir string, data []byte) (string, error) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	fail := func(err error) (string, error) {
+		f.Close()
+		os.Remove(tmp)
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		return fail(err)
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
+		return fail(err)
 	}
 	if err := f.Close(); err != nil {
-		return err
+		os.Remove(tmp)
+		return "", err
 	}
 	if err := os.Chmod(tmp, 0o640); err != nil {
-		return err
+		os.Remove(tmp)
+		return "", err
 	}
-	return os.Rename(tmp, path)
+	return tmp, nil
 }
 
 // SuggestTags returns existing tags of the user starting with prefix.
