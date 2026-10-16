@@ -87,7 +87,7 @@ Acceptance:
 Notes: Human must install Ollama plus an LLM and embedding model that support structured JSON output, and set config. Report any model/prompt problems with `/next M1-T10: <result>`.
 
 ## M1-T12 · Harden entry save (review findings from PR #4)
-Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: M1-T01 · PR: —
+Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: M1-T01 · PR: #5
 What: Saving an entry can no longer leave an orphan .md file, and malformed titles/tags cannot corrupt the raw file.
 Acceptance:
 - [ ] A failed or crashed DB commit leaves no orphan .md (write DB first/commit then rename, or clean up on failure); DB write lock not held across fsync
