@@ -8,4 +8,4 @@ db_path: ./data/journaletto.db
 provider: fake
 max_retries: 3
 # Max size of one journal entry in bytes
-max_entry_bytes: 65536
+max_entry_bytes: 102400
