@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Setup project",
+      "type": "shell",
+      "command": "npm run setup",
+      "problemMatcher": []
+    },
+    {
+      "label": "Check (types + lint + test)",
+      "type": "shell",
+      "command": "npm run check",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Token usage: live 5h block",
+      "type": "shell",
+      "command": "npx ccusage blocks --live",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Token usage: today",
+      "type": "shell",
+      "command": "npx ccusage daily",
+      "problemMatcher": []
+    }
+  ]
+}

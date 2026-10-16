@@ -1,0 +1,36 @@
+{
+  "name": "claude-boilerplate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit --pretty false",
+    "lint": "eslint . --quiet",
+    "format": "prettier --write .",
+    "test": "vitest run --reporter=dot --passWithNoTests",
+    "test:smoke": "echo 'No smoke tests yet — the walking-skeleton task (M*-T00) adds them.'",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "pipeline-check": "bash scripts/pipeline-check.sh",
+    "board": "node scripts/board.mjs",
+    "log": "node scripts/log.mjs",
+    "tokens": "ccusage daily",
+    "tokens:session": "ccusage session",
+    "tokens:blocks": "ccusage blocks --live"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "ccusage": "latest",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  }
+}

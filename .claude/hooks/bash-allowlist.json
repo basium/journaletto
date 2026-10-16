@@ -1,0 +1,40 @@
+{
+  "_comment": "Per-role Bash allowlists (regex, matched against each command segment after splitting on && || ; | and newlines). Enforced by allow-bash.mjs from each agent's frontmatter hook. Global guard-git.mjs still applies on top.",
+  "common": [
+    "^(ls|pwd|echo|printf|date|test|true|false|sleep|wc|head|tail|sort|uniq|cut|tr|basename|dirname|which|grep|rg|jq|diff)(\\s|$)",
+    "^(cd|mkdir|touch)\\s"
+  ],
+  "developer": [
+    "^(npm|npx|node|tsx)\\s",
+    "^bash scripts/pipeline-check\\.sh(\\s|$)",
+    "^docker(\\s|$)",
+    "^curl\\s",
+    "^git (status|diff|log|show|add|commit|fetch|rebase|switch|restore|stash|mv|rm|branch|rev-parse|ls-files|merge-base|remote)(\\s|$)",
+    "^git checkout -b task/",
+    "^git push (-u )?origin (HEAD|task/\\S+)$",
+    "^git push --force-with-lease origin task/\\S+$",
+    "^gh pr (create|view|diff|comment|checks|list)(\\s|$)",
+    "^gh api repos/\\S+/pulls/\\d+/(comments|reviews|files)(\\S*)(\\s|$)",
+    "^gh api repos/\\S+/pulls/comments/\\d+/replies(\\s|$)",
+    "^gh repo view(\\s|$)"
+  ],
+  "reviewer": [
+    "^git (log|diff|show|fetch|rev-parse)(\\s|$)",
+    "^gh pr (view|diff|checks|comment|list)(\\s|$)",
+    "^gh api repos/\\S+/pulls/\\d+(/(comments|files|reviews))?(\\s|$)",
+    "^gh repo view(\\s|$)"
+  ],
+  "devops": [
+    "^(npm|npx|node)\\s",
+    "^bash scripts/pipeline-check\\.sh(\\s|$)",
+    "^docker(\\s|$)",
+    "^curl\\s",
+    "^git (status|diff|log|show|add|commit|fetch|rebase|switch|restore|stash|mv|rm|branch|rev-parse|ls-files|merge-base|remote|pull --ff-only)(\\s|$)",
+    "^git checkout -b env/",
+    "^git push (-u )?origin (HEAD|env/\\S+)$",
+    "^git push --force-with-lease origin env/\\S+$",
+    "^gh pr (create|view|diff|comment|checks|list)(\\s|$)",
+    "^gh api repos/\\S+/pulls/\\d+/(comments|files)(\\s|$)",
+    "^gh repo view(\\s|$)"
+  ]
+}

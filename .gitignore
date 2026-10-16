@@ -1,11 +1,18 @@
-# Local, machine-specific config (see config.example.yaml for the template)
-config.yaml
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+!.env.ci
+.DS_Store
+*.log
+.pipeline-check.log
 
-# Local journal data (raw entries, SQLite DB, exports)
-data/
+# Agent/PL activity logs and checkpoints — local sink of scripts/log.mjs (other sinks in logging.config.json)
+.claude/Kanban/log.md
+.claude/history/main.md
 
-# Go build artifacts
-/bin/
-*.exe
-*.test
-*.out
+# personal Claude overrides
+.claude/settings.local.json
+CLAUDE.local.md

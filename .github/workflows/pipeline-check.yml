@@ -1,0 +1,52 @@
+name: Pipeline check
+# Runs the production-image build check only for environment changes:
+# PRs from env/* branches, or PRs touching build/runtime files.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            infra:
+              - 'Dockerfile'
+              - 'compose*.yml'
+              - '.env.ci'
+              - 'scripts/pipeline-check.sh'
+              - '.github/workflows/**'
+              - 'package.json'
+              - 'package-lock.json'
+
+  pipeline-check:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'env/') || needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build image, wait for HEALTHCHECK, smoke test
+        run: bash scripts/pipeline-check.sh
+
+      # Optional hardening — enable when wanted.
+      - name: Trivy image scan
+        if: false
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ github.event.repository.name }}:check
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+      - name: Push image to registry
+        if: false
+        run: echo "docker tag/push to your registry here"

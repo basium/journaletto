@@ -1,0 +1,30 @@
+{
+  "_comment": "Sinks for scripts/log.mjs. Every entry goes to every enabled sink whose events match. Add a sink here (and an adapter in scripts/log.mjs if it's a new type) — nothing else changes.",
+  "sinks": [
+    {
+      "name": "kanban-log",
+      "type": "file",
+      "enabled": true,
+      "path": ".claude/Kanban/log.md",
+      "format": "line",
+      "events": ["*"],
+      "exclude": ["checkpoint"]
+    },
+    {
+      "name": "history",
+      "type": "file",
+      "enabled": true,
+      "path": ".claude/history/main.md",
+      "format": "block",
+      "events": ["checkpoint"]
+    },
+    {
+      "name": "grafana-loki",
+      "type": "loki",
+      "enabled": false,
+      "url": "http://localhost:3100/loki/api/v1/push",
+      "labels": { "app": "claude-agents" },
+      "events": ["*"]
+    }
+  ]
+}
