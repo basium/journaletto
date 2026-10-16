@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Journaletto</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+  <h1>Journaletto</h1>
+  <button hx-get="/status" hx-target="#status">Check status</button>
+  <p id="status"></p>
+</body>
+</html>

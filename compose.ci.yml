@@ -1,0 +1,5 @@
+# Overlay for CI/smoke: HOST_PORT=18080 docker compose -f compose.yml -f compose.ci.yml up -d --build --wait
+# No external dependencies today (SQLite is embedded); add services here when needed.
+services:
+  app:
+    env_file: .env.ci

@@ -23,7 +23,8 @@ jobs:
               - 'scripts/pipeline-check.sh'
               - '.github/workflows/**'
               - 'package.json'
-              - 'package-lock.json'
+              - 'go.mod'
+              - 'go.sum'
 
   pipeline-check:
     needs: changes
@@ -31,11 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
       - name: Build image, wait for HEALTHCHECK, smoke test
         run: bash scripts/pipeline-check.sh
 

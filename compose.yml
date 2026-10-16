@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      DEV_USER_ID: "${DEV_USER_ID:-dev-user}"
+      PROVIDER: "${PROVIDER:-fake}"
+    volumes:
+      - journaletto-data:/data
+
+volumes:
+  journaletto-data:
