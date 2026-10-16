@@ -6,6 +6,7 @@
   ],
   "developer": [
     "^(npm|npx|node|tsx)\\s",
+    "^go\\s",
     "^bash scripts/pipeline-check\\.sh(\\s|$)",
     "^docker(\\s|$)",
     "^curl\\s",
@@ -26,6 +27,7 @@
   ],
   "devops": [
     "^(npm|npx|node)\\s",
+    "^go\\s",
     "^bash scripts/pipeline-check\\.sh(\\s|$)",
     "^docker(\\s|$)",
     "^curl\\s",
