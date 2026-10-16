@@ -1,0 +1,76 @@
+// Package store opens SQLite and applies schema migrations.
+package store
+
+import (
+	"database/sql"
+	"fmt"
+
+	_ "modernc.org/sqlite" // CGO-free SQLite driver
+)
+
+var migrations = []string{
+	`CREATE TABLE entries (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		title TEXT NOT NULL,
+		body TEXT NOT NULL,
+		journal_date TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		timezone TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'active',
+		processing_status TEXT NOT NULL DEFAULT 'pending',
+		file_path TEXT NOT NULL
+	);
+	CREATE INDEX entries_user_date ON entries(user_id, journal_date);
+	CREATE TABLE entry_tags (
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL,
+		tag TEXT NOT NULL,
+		PRIMARY KEY (entry_id, tag)
+	);
+	CREATE INDEX entry_tags_user_tag ON entry_tags(user_id, tag);
+	CREATE VIRTUAL TABLE entries_fts USING fts5(entry_id UNINDEXED, title, body, tags);`,
+}
+
+// Open opens (creating if needed) the database with foreign keys on and migrates it.
+func Open(path string) (*sql.DB, error) {
+	dsn := "file:" + path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func migrate(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
+		return err
+	}
+	var cur int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&cur); err != nil {
+		return err
+	}
+	for i := cur; i < len(migrations); i++ {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(migrations[i]); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES (?)`, i+1); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

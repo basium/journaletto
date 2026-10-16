@@ -1,13 +1,28 @@
-<!doctype html>
+{{define "result"}}{{if .Error}}<p class="error" role="alert" data-field="{{.Error.Field}}">{{.Error.Field}}: {{.Error.Message}}</p>{{else if .Saved}}<p class="success">Entry saved ({{.Saved.ID}}), processing: {{.Saved.Status}}</p>{{end}}{{end}}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Journaletto</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <meta name="htmx-config" content='{"responseHandling":[{"code":".*","swap":true}]}'>
+  <script src="/static/htmx.min.js"></script>
 </head>
 <body>
   <h1>Journaletto</h1>
-  <button hx-get="/status" hx-target="#status">Check status</button>
-  <p id="status"></p>
+  <form method="post" action="/entries" hx-post="/entries" hx-target="#result">
+    <p><label>Title <input name="title" maxlength="200" required value="{{.Form.Title}}"></label></p>
+    <p><label>Date <input type="date" name="journal_date" value="{{.Form.JournalDate}}"></label></p>
+    <p><label>Description <textarea name="description" rows="10">{{.Form.Description}}</textarea></label></p>
+    <p><label>Tags (comma separated)
+      <input name="tags" list="tag-suggestions" autocomplete="off" value="{{.TagsText}}"
+        hx-get="/tags" hx-trigger="keyup changed delay:200ms" hx-target="#tag-suggestions" hx-swap="innerHTML">
+    </label>
+    <datalist id="tag-suggestions"></datalist></p>
+    <input type="hidden" name="timezone" id="timezone" value="{{.Form.Timezone}}">
+    <button type="submit">Save</button>
+  </form>
+  <div id="result">{{template "result" .}}</div>
+  <script>
+    document.getElementById("timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  </script>
 </body>
 </html>
