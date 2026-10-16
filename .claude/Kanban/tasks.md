@@ -16,12 +16,12 @@ Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 Module: M1 · 2026-10-14-journal-entry-service
 
 ## M1-T00 · Walking skeleton (Go)
-Status: Blocked · Mode: AFK · Assignee: — · Blocked by: — · PR: —
+Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: — · PR: —
 What: A running Go service with `GET /healthz` and a trivial HTMX home page, containerised, with CI green.
 Acceptance:
 - [ ] `npm run test:smoke` starts the compose stack and gets 200 from `/healthz`; `bash scripts/pipeline-check.sh` passes
 - [ ] Old Go code and unused TS `src/`, `tsconfig*`, eslint config removed; `npm run check|test` run `go vet`/`go test`
-Notes: BLOCKER: worktree is cut from main (1e75ddc) which has no .claude/ SOPs; agent could not start. Go ≥1.22, `net/http`, `html/template`, HTMX, `modernc.org/sqlite` (CGO-free). Multi-stage Dockerfile with HEALTHCHECK, `compose.yml`, `compose.ci.yml`, `.env.ci`. Keep `npm run log|board`. Adapt `.github/` workflow to run `pipeline-check.sh`. Add `config.example.yaml`/`.env.example` documenting every setting (DEV_USER_ID, data root, DB path, provider, retries, limits).
+Notes: Work in worktree .claude/worktrees/m1-t00 (branch feature/m1-t00-walking-skeleton, from feature/m1-slice1-entry-save); PR targets feature/m1-slice1-entry-save. Go ≥1.22, `net/http`, `html/template`, HTMX, `modernc.org/sqlite` (CGO-free). Multi-stage Dockerfile with HEALTHCHECK, `compose.yml`, `compose.ci.yml`, `.env.ci`. Keep `npm run log|board`. Adapt `.github/` workflow to run `pipeline-check.sh`. Add `config.example.yaml`/`.env.example` documenting every setting (DEV_USER_ID, data root, DB path, provider, retries, limits).
 
 ## M1-T01 · Save an entry as raw Markdown
 Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T00 · PR: —
