@@ -35,7 +35,9 @@ wait_http() { # url
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   say "Building $TAG (target: runtime)"
-  docker build --target runtime -t "$TAG" . >/dev/null
+  VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+  COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+  docker build --target runtime --build-arg VERSION="$VERSION" --build-arg COMMIT="$COMMIT" -t "$TAG" . >/dev/null
 
   # No external dependencies (SQLite is embedded), so no dependency stack to start.
   say "Running container"
