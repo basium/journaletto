@@ -2,7 +2,6 @@
 package main
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -10,10 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite" // CGO-free SQLite driver
-
 	"journaletto/internal/config"
 	"journaletto/internal/server"
+	"journaletto/internal/store"
 )
 
 func main() {
@@ -38,16 +36,13 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o750); err != nil {
 		log.Fatalf("db dir: %v", err)
 	}
-	db, err := sql.Open("sqlite", cfg.DBPath)
+	db, err := store.Open(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
 	defer db.Close()
-	if err := db.Ping(); err != nil {
-		log.Fatalf("db ping: %v", err)
-	}
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("journaletto %s (%s) listening on %s", cfg.Version, cfg.Commit, addr)
-	log.Fatal(http.ListenAndServe(addr, server.New(cfg)))
+	log.Fatal(http.ListenAndServe(addr, server.New(cfg, db)))
 }
