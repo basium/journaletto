@@ -16,7 +16,7 @@ Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 Module: M1 · 2026-10-14-journal-entry-service
 
 ## M1-T03 · Summary and internal tags with provenance
-Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: M1-T02 · PR: —
+Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: M1-T02 · PR: #7
 What: Processing generates a compact summary and hidden internal tags for each entry.
 Acceptance:
 - [ ] After processing, summary and internal tags are stored (not in the raw file, not an editable field)
