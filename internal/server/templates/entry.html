@@ -1,0 +1,17 @@
+{{define "status"}}<div id="status" class="status status-{{.Status}}"{{if .Polling}} hx-get="/entries/{{.ID}}/status" hx-trigger="every 2s" hx-swap="outerHTML"{{end}}>
+  Processing: <strong>{{.Status}}</strong>
+  <button hx-post="/entries/{{.ID}}/resync" hx-target="#status" hx-swap="outerHTML">Resync</button>
+</div>{{end}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Journaletto entry</title>
+  <meta name="htmx-config" content='{"responseHandling":[{"code":".*","swap":true}]}'>
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <h1>Entry {{.ID}}</h1>
+  <div hx-get="/entries/{{.ID}}/status" hx-trigger="load" hx-swap="outerHTML">Loading status...</div>
+  <p><a href="/">Back</a></p>
+</body>
+</html>

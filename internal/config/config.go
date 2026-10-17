@@ -12,21 +12,22 @@ import (
 
 // Config holds every runtime setting. See config.example.yaml and .env.example.
 type Config struct {
-	Port          int    `yaml:"port"`
-	DevUserID     string `yaml:"dev_user_id"`
-	DataRoot      string `yaml:"data_root"`
-	DBPath        string `yaml:"db_path"`
-	Provider      string `yaml:"provider"` // fake | local | external
-	MaxRetries    int    `yaml:"max_retries"`
-	MaxEntryBytes int    `yaml:"max_entry_bytes"`
-	Version       string `yaml:"-"`
-	Commit        string `yaml:"-"`
+	Port              int    `yaml:"port"`
+	DevUserID         string `yaml:"dev_user_id"`
+	DataRoot          string `yaml:"data_root"`
+	DBPath            string `yaml:"db_path"`
+	Provider          string `yaml:"provider"` // fake | local | external
+	MaxRetries        int    `yaml:"max_retries"`
+	MaxEntryBytes     int    `yaml:"max_entry_bytes"`
+	WorkerConcurrency int    `yaml:"worker_concurrency"`
+	Version           string `yaml:"-"`
+	Commit            string `yaml:"-"`
 }
 
 func defaults() Config {
 	return Config{
 		Port: 3000, DevUserID: "dev-user", DataRoot: "./data", DBPath: "./data/journaletto.db",
-		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 102400,
+		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 102400, WorkerConcurrency: 1,
 		Version: "dev", Commit: "unknown",
 	}
 }
@@ -69,10 +70,14 @@ func Load() (Config, error) {
 	setStr("PROVIDER", &c.Provider)
 	setInt("MAX_RETRIES", &c.MaxRetries)
 	setInt("MAX_ENTRY_BYTES", &c.MaxEntryBytes)
+	setInt("WORKER_CONCURRENCY", &c.WorkerConcurrency)
 	setStr("VERSION", &c.Version)
 	setStr("COMMIT", &c.Commit)
 	if err != nil {
 		return c, err
+	}
+	if c.WorkerConcurrency < 1 || c.MaxRetries < 0 {
+		return c, fmt.Errorf("worker_concurrency must be >= 1 and max_retries >= 0")
 	}
 	switch c.Provider {
 	case "fake", "local", "external":

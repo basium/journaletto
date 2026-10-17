@@ -15,6 +15,7 @@ import (
 
 	"journaletto/internal/config"
 	"journaletto/internal/entries"
+	"journaletto/internal/worker"
 )
 
 //go:embed templates/*.html
@@ -115,6 +116,58 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		default:
 			renderResult(w, r, render, page{Saved: &saved}, http.StatusCreated)
 		}
+	})
+	// status renders the processing-status fragment, which polls itself until a terminal state.
+	status := func(w http.ResponseWriter, r *http.Request, code int) {
+		id := r.PathValue("id")
+		st, err := worker.Status(r.Context(), db, cfg.DevUserID, id)
+		if errors.Is(err, worker.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			log.Printf("status: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if strings.Contains(r.Header.Get("Accept"), "application/json") {
+			writeJSON(w, code, map[string]string{"id": id, "status": st})
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(code)
+		if err := tpl.ExecuteTemplate(w, "status", map[string]any{"ID": id, "Status": st, "Polling": st == "pending" || st == "processing"}); err != nil {
+			log.Printf("render: %v", err)
+		}
+	}
+	mux.HandleFunc("GET /entries/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if _, err := worker.Status(r.Context(), db, cfg.DevUserID, id); err != nil {
+			if errors.Is(err, worker.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := tpl.ExecuteTemplate(w, "entry.html", map[string]string{"ID": id}); err != nil {
+			log.Printf("render: %v", err)
+		}
+	})
+	mux.HandleFunc("GET /entries/{id}/status", func(w http.ResponseWriter, r *http.Request) { status(w, r, http.StatusOK) })
+	mux.HandleFunc("POST /entries/{id}/resync", func(w http.ResponseWriter, r *http.Request) {
+		err := worker.Resync(r.Context(), db, cfg.DevUserID, r.PathValue("id"))
+		if errors.Is(err, worker.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			log.Printf("resync: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		status(w, r, http.StatusAccepted)
 	})
 	return mux
 }
