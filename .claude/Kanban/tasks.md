@@ -8,23 +8,15 @@ Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T01 · PR: —
 What: <end-to-end behaviour this vertical slice delivers, user's perspective>
 Acceptance:
 - [ ] <criterion — becomes ≤ 2 tests>
-Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
+Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines> ALSO (PR #6 review): in internal/worker/worker.go ~51 a startup Sweep error makes Run return before workers start while main only logs it; make Run log and continue (or make main exit) and add a test.
 -->
 
 # Kanban
 
 Module: M1 · 2026-10-14-journal-entry-service
 
-## M1-T02 · Background processing, statuses, retry, resync
-Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: M1-T12 · PR: #6
-What: Saved entries are picked up by an in-process worker; status moves pending → processing → ready/failed and can be retried or resynced.
-Acceptance:
-- [ ] With the fake provider an entry reaches `ready`; failures retry 3× with exponential backoff, then `failed`
-- [ ] `POST /entries/{id}/resync` and a startup sweep re-queue `pending`/`failed`; save still succeeds when the provider is down
-Notes: SQLite job table, concurrency configurable (default 1). Define model-provider interfaces (LLM + embeddings) with deterministic `fake` adapter; provider types `local|external|fake` in config. Status shown on the entry page via HTMX polling. Processing steps are pluggable so T03–T07 add stages. ALSO (carry-over from PR #5 review): Save currently commits the DB row before renaming the .md into place, so a crash leaves a row with no file. Fix the order (rename first, then commit; delete the file if the commit fails) or add startup reconciliation, with tests for rename failure and commit failure.
-
 ## M1-T03 · Summary and internal tags with provenance
-Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T02 · PR: —
+Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: M1-T02 · PR: —
 What: Processing generates a compact summary and hidden internal tags for each entry.
 Acceptance:
 - [ ] After processing, summary and internal tags are stored (not in the raw file, not an editable field)

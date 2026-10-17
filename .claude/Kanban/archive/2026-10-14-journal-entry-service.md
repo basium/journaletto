@@ -29,3 +29,11 @@ Acceptance:
 - [ ] A failed or crashed DB commit leaves no orphan .md (write DB first/commit then rename, or clean up on failure); DB write lock not held across fsync
 - [ ] Title with newline is rejected or collapsed (no front-matter/Markdown injection); 100-tag cap and 1–50 length checked on the raw input; unit tests in internal/entries cover all limits and boundaries
 Notes: Source: reviewer comments on PR #4 (entries.go Save ~162, normalize ~71/~138). Use config MaxEntryBytes instead of the hardcoded limit if config says 100 KB (T01 left 65536 unused; spec is 100 KB). Raw file stays source of truth.
+
+## M1-T02 · Background processing, statuses, retry, resync
+Status: Deployed · Mode: AFK · Assignee: developer · Blocked by: M1-T12 · PR: #6
+What: Saved entries are picked up by an in-process worker; status moves pending → processing → ready/failed and can be retried or resynced.
+Acceptance:
+- [ ] With the fake provider an entry reaches `ready`; failures retry 3× with exponential backoff, then `failed`
+- [ ] `POST /entries/{id}/resync` and a startup sweep re-queue `pending`/`failed`; save still succeeds when the provider is down
+Notes: SQLite job table, concurrency configurable (default 1). Define model-provider interfaces (LLM + embeddings) with deterministic `fake` adapter; provider types `local|external|fake` in config. Status shown on the entry page via HTMX polling. Processing steps are pluggable so T03–T07 add stages. ALSO (carry-over from PR #5 review): Save currently commits the DB row before renaming the .md into place, so a crash leaves a row with no file. Fix the order (rename first, then commit; delete the file if the commit fails) or add startup reconciliation, with tests for rename failure and commit failure.
