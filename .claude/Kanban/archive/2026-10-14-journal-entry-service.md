@@ -37,3 +37,11 @@ Acceptance:
 - [ ] With the fake provider an entry reaches `ready`; failures retry 3× with exponential backoff, then `failed`
 - [ ] `POST /entries/{id}/resync` and a startup sweep re-queue `pending`/`failed`; save still succeeds when the provider is down
 Notes: SQLite job table, concurrency configurable (default 1). Define model-provider interfaces (LLM + embeddings) with deterministic `fake` adapter; provider types `local|external|fake` in config. Status shown on the entry page via HTMX polling. Processing steps are pluggable so T03–T07 add stages. ALSO (carry-over from PR #5 review): Save currently commits the DB row before renaming the .md into place, so a crash leaves a row with no file. Fix the order (rename first, then commit; delete the file if the commit fails) or add startup reconciliation, with tests for rename failure and commit failure.
+
+## M1-T03 · Summary and internal tags with provenance
+Status: Deployed · Mode: AFK · Assignee: developer · Blocked by: M1-T02 · PR: #7
+What: Processing generates a compact summary and hidden internal tags for each entry.
+Acceptance:
+- [ ] After processing, summary and internal tags are stored (not in the raw file, not an editable field)
+- [ ] Provider, model, prompt version and timestamp stored with the artefact
+Notes: Raw file must never contain generated data (JE-004/JE-007). Prompts are versioned constants. Use fake provider in tests. ALSO (PR #6 review): in internal/worker/worker.go ~51 a startup Sweep error makes Run return before workers start while main only logs it; make Run log and continue (or make main exit) and add a test.

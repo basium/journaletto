@@ -15,21 +15,13 @@ Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 
 Module: M1 · 2026-10-14-journal-entry-service
 
-## M1-T03 · Summary and internal tags with provenance
-Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: M1-T02 · PR: #7
-What: Processing generates a compact summary and hidden internal tags for each entry.
-Acceptance:
-- [ ] After processing, summary and internal tags are stored (not in the raw file, not an editable field)
-- [ ] Provider, model, prompt version and timestamp stored with the artefact
-Notes: Raw file must never contain generated data (JE-004/JE-007). Prompts are versioned constants. Use fake provider in tests. ALSO (PR #6 review): in internal/worker/worker.go ~51 a startup Sweep error makes Run return before workers start while main only logs it; make Run log and continue (or make main exit) and add a test.
-
 ## M1-T04 · Entity extraction and relationships
-Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T03 · PR: —
+Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: M1-T03 · PR: —
 What: Processing extracts entities and relations and stores them for graph traversal later.
 Acceptance:
 - [ ] Entities of the 16 JE-008 types are stored normalised and deduplicated per entry, with relationships and provenance
 - [ ] Reprocessing the same entry creates no duplicate entities or relationships
-Notes: Types: Projects, People, Brands, Features, Releases, Tickets, Commits, Merges, Pull Requests, Companies, Systems, Decisions, Incidents, Tasks, Concepts, Dates. LLM JSON `{type,value,relations:[{to,kind}]}`; reject unknown types.
+Notes: Types: Projects, People, Brands, Features, Releases, Tickets, Commits, Merges, Pull Requests, Companies, Systems, Decisions, Incidents, Tasks, Concepts, Dates. LLM JSON `{type,value,relations:[{to,kind}]}`; reject unknown types. ALSO (PR #7 review): in internal/worker/steps.go ~69 an empty/blank LLM summary is stored as success and the entry goes to ready; treat blank summary as a step failure (retry/failed) with a test. Run `go fmt ./...` before opening the PR.
 
 ## M1-T05 · Semantic chunks
 Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T03 · PR: —
