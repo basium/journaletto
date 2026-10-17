@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -38,6 +39,7 @@ func DefaultSteps(db *sql.DB, p provider.Provider) []Step {
 			},
 		},
 		SummaryTagsStep(db, p),
+		EntitiesStep(db, p),
 	}
 }
 
@@ -49,6 +51,10 @@ func SummaryTagsStep(db *sql.DB, p provider.Provider) Step {
 		summary, err := p.Complete(ctx, summaryPrompt+text)
 		if err != nil {
 			return err
+		}
+		summary = strings.TrimSpace(summary)
+		if summary == "" {
+			return errors.New("empty summary from provider")
 		}
 		rawTags, err := p.Complete(ctx, tagsPrompt+text)
 		if err != nil {
@@ -66,7 +72,7 @@ func SummaryTagsStep(db *sql.DB, p provider.Provider) Step {
 		}
 		defer tx.Rollback()
 		for _, a := range []struct{ kind, content, version string }{
-			{KindSummary, strings.TrimSpace(summary), SummaryPromptVersion},
+			{KindSummary, summary, SummaryPromptVersion},
 			{KindInternalTags, string(tags), TagsPromptVersion},
 		} {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO entry_artifacts(entry_id,kind,content,provider,model,prompt_version,generated_at)

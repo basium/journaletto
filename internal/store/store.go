@@ -55,6 +55,31 @@ var migrations = []string{
 		generated_at TEXT NOT NULL,
 		PRIMARY KEY (entry_id, kind)
 	);`,
+	// Extracted entities and relations (graph source data) with provenance. Entities are unique
+	// per (entry, type, normalised value); relations are unique per (from, to, kind).
+	`CREATE TABLE entities (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		type TEXT NOT NULL,
+		value TEXT NOT NULL,
+		norm_value TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		UNIQUE (entry_id, type, norm_value)
+	);
+	CREATE TABLE entity_relations (
+		from_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+		to_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		PRIMARY KEY (from_id, to_id, kind)
+	);
+	CREATE INDEX entities_type_value ON entities(type, norm_value);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.

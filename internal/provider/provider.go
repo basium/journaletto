@@ -51,7 +51,15 @@ const FakeDims = 8
 // Fake is a deterministic, offline adapter for development and tests.
 type Fake struct{}
 
+// EntityPromptPrefix starts every entity-extraction prompt; the fake adapter answers it with
+// canned JSON so the pipeline can be tested offline.
+const EntityPromptPrefix = "Extract entities"
+
 func (Fake) Complete(_ context.Context, prompt string) (string, error) {
+	if strings.HasPrefix(prompt, EntityPromptPrefix) {
+		return `[{"type":"Concepts","value":"Journaling","relations":[{"to":"Fake Project","kind":"part_of"}]},` +
+			`{"type":"Projects","value":"Fake Project","relations":[]}]`, nil
+	}
 	r := []rune(strings.TrimSpace(prompt))
 	if len(r) > 80 {
 		r = r[:80]
