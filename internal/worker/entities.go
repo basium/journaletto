@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -21,8 +22,8 @@ var EntityTypes = []string{
 }
 
 var entitiesPrompt = provider.EntityPromptPrefix + ` from this journal entry. Answer with only a JSON array of
-{"type":T,"value":V,"relations":[{"to":V2,"kind":K}]} where T is one of: ` + strings.Join(EntityTypes, ", ") +
-	`; relations point to the value of another entity in the same array and K is a short lowercase verb phrase.
+{"type":T,"value":V,"relations":[{"to":V2,"to_type":T2,"kind":K}]} where T is one of: ` + strings.Join(EntityTypes, ", ") +
+	`; relations point to the value and type of another entity in the same array and K is a short lowercase verb phrase.
 
 `
 
@@ -30,8 +31,9 @@ type rawEntity struct {
 	Type      string `json:"type"`
 	Value     string `json:"value"`
 	Relations []struct {
-		To   string `json:"to"`
-		Kind string `json:"kind"`
+		To     string `json:"to"`
+		ToType string `json:"to_type"`
+		Kind   string `json:"kind"`
 	} `json:"relations"`
 }
 
@@ -80,13 +82,21 @@ func EntitiesStep(db *sql.DB, p provider.Provider) Step {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM entities WHERE entry_id=?`, e.ID); err != nil {
 			return err
 		}
-		ids := map[string]int64{} // normalised value -> id of first accepted entity
-		type rel struct{ from, to, kind string }
+		type key struct{ typ, norm string }
+		ids := map[key]int64{}             // (type, normalised value) -> entity id
+		firstByValue := map[string]int64{} // normalised value -> first accepted entity, for relations without to_type
+		type rel struct {
+			from   int64
+			to     key
+			anyTyp bool
+			kind   string
+		}
 		var rels []rel
 		for _, r := range raw {
 			typ, ok := canonicalType(r.Type)
 			val := normSpace(r.Value)
 			if !ok || val == "" {
+				log.Printf("entities: entry %s: dropped invalid entity (type=%q, reason=unknown type or blank value)", e.ID, r.Type)
 				continue
 			}
 			norm := strings.ToLower(val)
@@ -98,25 +108,40 @@ func EntitiesStep(db *sql.DB, p provider.Provider) Step {
 			if err != nil {
 				return err
 			}
-			if _, seen := ids[norm]; !seen {
-				ids[norm] = id
+			ids[key{typ, norm}] = id
+			if _, seen := firstByValue[norm]; !seen {
+				firstByValue[norm] = id
 			}
 			for _, rr := range r.Relations {
 				kind := strings.ToLower(normSpace(rr.Kind))
 				to := strings.ToLower(normSpace(rr.To))
-				if kind != "" && to != "" {
-					rels = append(rels, rel{norm, to, kind})
+				if kind == "" || to == "" {
+					log.Printf("entities: entry %s: dropped invalid relation from type=%q (reason=blank kind or target)", e.ID, typ)
+					continue
 				}
+				k := rel{from: id, kind: kind, anyTyp: true, to: key{norm: to}}
+				if strings.TrimSpace(rr.ToType) != "" {
+					tt, ok := canonicalType(rr.ToType)
+					if !ok {
+						log.Printf("entities: entry %s: dropped invalid relation from type=%q (reason=unknown target type)", e.ID, typ)
+						continue
+					}
+					k.anyTyp, k.to.typ = false, tt
+				}
+				rels = append(rels, k)
 			}
 		}
 		for _, r := range rels {
-			from, ok1 := ids[r.from]
-			to, ok2 := ids[r.to]
-			if !ok1 || !ok2 {
+			to, ok := firstByValue[r.to.norm]
+			if !r.anyTyp {
+				to, ok = ids[r.to]
+			}
+			if !ok {
+				log.Printf("entities: entry %s: dropped relation (reason=target not extracted)", e.ID)
 				continue
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO entity_relations(from_id,to_id,kind,provider,model,prompt_version,generated_at)
-				VALUES(?,?,?,?,?,?,?)`, from, to, r.kind, name, model, EntitiesPromptVersion, now); err != nil {
+				VALUES(?,?,?,?,?,?,?)`, r.from, to, r.kind, name, model, EntitiesPromptVersion, now); err != nil {
 				return err
 			}
 		}

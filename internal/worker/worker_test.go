@@ -200,12 +200,18 @@ func count(t *testing.T, db *sql.DB, q string, args ...any) int {
 func TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess(t *testing.T) {
 	db, svc := setup(t)
 	id := save(t, svc)
+	var calls atomic.Int32
 	llm := stubLLM{complete: func(p string) string {
 		if !strings.HasPrefix(p, provider.EntityPromptPrefix) {
 			return "\x00"
 		}
+		kind := "Works On"
+		if calls.Add(1) > 1 {
+			kind = "Leads" // reprocess must replace the old relation, not add to it
+		}
 		return "```json\n" + `[
-			{"type":"people","value":"  Ada   Lovelace ","relations":[{"to":"journaletto","kind":"Works On"}]},
+			{"type":"Concepts","value":"Journaletto","relations":[]},
+			{"type":"people","value":"  Ada   Lovelace ","relations":[{"to":"journaletto","to_type":"Projects","kind":"` + kind + `"}]},
 			{"type":"People","value":"ada lovelace","relations":[]},
 			{"type":"Projects","value":"Journaletto","relations":[{"to":"Nowhere","kind":"x"}]},
 			{"type":"Spaceships","value":"Enterprise","relations":[]},
@@ -214,10 +220,10 @@ func TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess(t *testi
 	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, llm), MaxRetries: 0})
 	waitStatus(t, db, id, "ready")
 
-	check := func() {
+	check := func(wantKind string) {
 		t.Helper()
-		if n := count(t, db, `SELECT COUNT(*) FROM entities WHERE entry_id=?`, id); n != 2 {
-			t.Errorf("entities = %d, want 2", n)
+		if n := count(t, db, `SELECT COUNT(*) FROM entities WHERE entry_id=?`, id); n != 3 {
+			t.Errorf("entities = %d, want 3 (same value under two types kept apart)", n)
 		}
 		var v, pv, prov, model, at string
 		if err := db.QueryRow(`SELECT value,prompt_version,provider,model,generated_at FROM entities WHERE type='People'`).Scan(&v, &pv, &prov, &model, &at); err != nil {
@@ -226,14 +232,18 @@ func TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess(t *testi
 		if v != "Ada Lovelace" || pv != worker.EntitiesPromptVersion || prov != "fake" || model == "" || at == "" {
 			t.Errorf("people row: %q %q %q %q %q", v, pv, prov, model, at)
 		}
-		if n := count(t, db, `SELECT COUNT(*) FROM entity_relations WHERE kind='works on' AND prompt_version<>''`); n != 1 {
-			t.Errorf("relations = %d, want 1 (dangling one dropped)", n)
+		var kind, toType string
+		if err := db.QueryRow(`SELECT r.kind,t.type FROM entity_relations r JOIN entities t ON t.id=r.to_id WHERE r.prompt_version<>''`).Scan(&kind, &toType); err != nil {
+			t.Fatal(err)
+		}
+		if kind != wantKind || toType != "Projects" {
+			t.Errorf("relation = %q -> %q, want %q -> Projects", kind, toType, wantKind)
 		}
 		if n := count(t, db, `SELECT COUNT(*) FROM entity_relations`); n != 1 {
 			t.Errorf("total relations = %d, want 1", n)
 		}
 	}
-	check()
+	check("works on")
 
 	if err := worker.Resync(context.Background(), db, "u", id); err != nil {
 		t.Fatal(err)
@@ -242,7 +252,7 @@ func TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess(t *testi
 		time.Sleep(2 * time.Millisecond)
 	}
 	waitStatus(t, db, id, "ready")
-	check()
+	check("leads")
 }
 
 func TestBlankSummaryFailsTheStepInsteadOfReady(t *testing.T) {
