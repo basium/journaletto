@@ -55,7 +55,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	w := &worker.Worker{DB: db, Steps: worker.DefaultSteps(prov), Concurrency: cfg.WorkerConcurrency, MaxRetries: cfg.MaxRetries, Backoff: time.Second}
+	w := &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, prov), Concurrency: cfg.WorkerConcurrency, MaxRetries: cfg.MaxRetries, Backoff: time.Second}
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)

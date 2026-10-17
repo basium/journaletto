@@ -49,7 +49,8 @@ func (w *Worker) now() time.Time {
 // Run sweeps unfinished entries into the queue, then processes jobs until ctx is done.
 func (w *Worker) Run(ctx context.Context) error {
 	if err := Sweep(ctx, w.DB); err != nil {
-		return fmt.Errorf("startup sweep: %w", err)
+		// Not fatal: queued jobs are still processed, and the next startup sweeps again.
+		log.Printf("worker: startup sweep: %v", err)
 	}
 	n := w.Concurrency
 	if n < 1 {

@@ -25,6 +25,8 @@ type Embedder interface {
 type Provider interface {
 	LLM
 	Embedder
+	// Identity reports the provider name and model, recorded as provenance on generated artefacts.
+	Identity() (name, model string)
 }
 
 // ErrUnavailable is returned by adapters whose backend is not reachable or not implemented yet.
@@ -57,6 +59,8 @@ func (Fake) Complete(_ context.Context, prompt string) (string, error) {
 	return "fake: " + string(r), nil
 }
 
+func (Fake) Identity() (string, string) { return "fake", "fake-1" }
+
 func (Fake) Embed(_ context.Context, text string) ([]float32, error) {
 	sum := sha256.Sum256([]byte(text))
 	v := make([]float32, FakeDims)
@@ -74,6 +78,8 @@ func (Fake) Embed(_ context.Context, text string) ([]float32, error) {
 }
 
 type unavailable struct{ kind string }
+
+func (u unavailable) Identity() (string, string) { return u.kind, "unavailable" }
 
 func (u unavailable) Complete(context.Context, string) (string, error) {
 	return "", fmt.Errorf("%s: %w", u.kind, ErrUnavailable)
