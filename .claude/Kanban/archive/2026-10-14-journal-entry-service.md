@@ -21,3 +21,11 @@ Acceptance:
 - [ ] Invalid input returns 400 `{field,message}` (JSON) / inline error (HTML); canonical row + FTS row exist; status `pending`
 Notes: Limits: title 1–200; body ≤100 KB; ≤100 tags, each 1–50, lowercased, deduped; date optional default today. Timezone from browser (hidden field). UTC folder/filename; local time only for display. No media upload, links ok. Save must not depend on AI. Tag autocomplete via HTMX (existing tags). SQLite migrations, foreign keys on. Save ≤ 500 ms p95. Also: vendor htmx via go:embed (or pin with SRI) instead of loading from unpkg (follow-up from M1-T00 review). Branch from origin/feature/m1-slice1-entry-save, PR base same.
 
+
+## M1-T12 · Harden entry save (review findings from PR #4)
+Status: Deployed · Mode: AFK · Assignee: developer · Blocked by: M1-T01 · PR: #5
+What: Saving an entry can no longer leave an orphan .md file, and malformed titles/tags cannot corrupt the raw file.
+Acceptance:
+- [ ] A failed or crashed DB commit leaves no orphan .md (write DB first/commit then rename, or clean up on failure); DB write lock not held across fsync
+- [ ] Title with newline is rejected or collapsed (no front-matter/Markdown injection); 100-tag cap and 1–50 length checked on the raw input; unit tests in internal/entries cover all limits and boundaries
+Notes: Source: reviewer comments on PR #4 (entries.go Save ~162, normalize ~71/~138). Use config MaxEntryBytes instead of the hardcoded limit if config says 100 KB (T01 left 65536 unused; spec is 100 KB). Raw file stays source of truth.
