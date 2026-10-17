@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -73,7 +75,7 @@ func TestFakeProviderEntryReachesReady(t *testing.T) {
 	if got := status(t, db, id); got != "pending" {
 		t.Fatalf("after save: %s", got)
 	}
-	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(provider.Fake{}), MaxRetries: 3})
+	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, provider.Fake{}), MaxRetries: 3})
 	waitStatus(t, db, id, "ready")
 }
 
@@ -121,7 +123,7 @@ func TestSweepAndResyncRequeueFailedAndPendingWhenProviderWasDown(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(provider.Fake{}), MaxRetries: 3})
+	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, provider.Fake{}), MaxRetries: 3})
 	for _, id := range []string{failed, pending, stuck} {
 		waitStatus(t, db, id, "ready")
 	}
@@ -136,13 +138,66 @@ func TestSweepAndResyncRequeueFailedAndPendingWhenProviderWasDown(t *testing.T) 
 	}
 }
 
+func TestProcessingStoresSummaryAndInternalTagsWithProvenanceNotInRawFile(t *testing.T) {
+	db, svc := setup(t)
+	id := save(t, svc)
+	var path string
+	if err := db.QueryRow(`SELECT file_path FROM entries WHERE id=?`, id).Scan(&path); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, provider.Fake{}), MaxRetries: 3})
+	waitStatus(t, db, id, "ready")
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Error("raw file changed by processing")
+	}
+	for kind, version := range map[string]string{worker.KindSummary: worker.SummaryPromptVersion, worker.KindInternalTags: worker.TagsPromptVersion} {
+		var content, prov, model, pv, at string
+		err := db.QueryRow(`SELECT content,provider,model,prompt_version,generated_at FROM entry_artifacts WHERE entry_id=? AND kind=?`, id, kind).
+			Scan(&content, &prov, &model, &pv, &at)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if content == "" || prov != "fake" || model == "" || pv != version || at == "" {
+			t.Errorf("%s: content=%q provider=%q model=%q version=%q at=%q", kind, content, prov, model, pv, at)
+		}
+		if strings.Contains(string(after), content) {
+			t.Errorf("%s leaked into raw file", kind)
+		}
+	}
+}
+
+func TestSweepFailureDoesNotStopWorkers(t *testing.T) {
+	db, svc := setup(t)
+	queued, orphan := save(t, svc), save(t, svc)
+	// The orphan has no job, so the startup sweep tries to insert one; make that fail.
+	for _, q := range []string{
+		`DELETE FROM jobs WHERE entry_id='` + orphan + `'`,
+		`CREATE TRIGGER sweep_boom BEFORE INSERT ON jobs BEGIN SELECT RAISE(ABORT,'boom'); END`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, provider.Fake{}), MaxRetries: 3})
+	waitStatus(t, db, queued, "ready") // workers still ran despite the sweep error
+}
+
 func TestSaveSucceedsWhenProviderIsDown(t *testing.T) {
 	db, svc := setup(t)
 	p, err := provider.New("external") // placeholder adapter: always unavailable
 	if err != nil {
 		t.Fatal(err)
 	}
-	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(p), MaxRetries: 1, Backoff: time.Millisecond})
+	start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, p), MaxRetries: 1, Backoff: time.Millisecond})
 	id := save(t, svc) // must not error
 	waitStatus(t, db, id, "failed")
 }

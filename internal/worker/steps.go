@@ -2,17 +2,98 @@ package worker
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"strings"
+	"time"
 
 	"journaletto/internal/provider"
 )
 
-// DefaultSteps is the processing pipeline. T03-T07 append their stages here.
-func DefaultSteps(p provider.Provider) []Step {
-	return []Step{{
-		Name: "embed",
-		Run: func(ctx context.Context, e Entry) error {
-			_, err := p.Embed(ctx, e.Title+"\n\n"+e.Body)
-			return err
+// Prompt versions are recorded with each generated artefact; bump when the text changes.
+const (
+	SummaryPromptVersion = "summary-v1"
+	TagsPromptVersion    = "tags-v1"
+
+	summaryPrompt = "Summarise this journal entry in one or two short sentences.\n\n"
+	tagsPrompt    = "List up to 8 short lowercase topic tags for this journal entry, comma separated, nothing else.\n\n"
+)
+
+// Artefact kinds stored in entry_artifacts.
+const (
+	KindSummary      = "summary"
+	KindInternalTags = "internal_tags"
+)
+
+const maxInternalTags = 8
+
+// DefaultSteps is the processing pipeline. T04-T07 append their stages here.
+func DefaultSteps(db *sql.DB, p provider.Provider) []Step {
+	return []Step{
+		{
+			Name: "embed",
+			Run: func(ctx context.Context, e Entry) error {
+				_, err := p.Embed(ctx, e.Title+"\n\n"+e.Body)
+				return err
+			},
 		},
+		SummaryTagsStep(db, p),
+	}
+}
+
+// SummaryTagsStep generates a compact summary and hidden internal tags and stores them in the
+// database with provenance. It never touches the raw entry file.
+func SummaryTagsStep(db *sql.DB, p provider.Provider) Step {
+	return Step{Name: "summary-tags", Run: func(ctx context.Context, e Entry) error {
+		text := e.Title + "\n\n" + e.Body
+		summary, err := p.Complete(ctx, summaryPrompt+text)
+		if err != nil {
+			return err
+		}
+		rawTags, err := p.Complete(ctx, tagsPrompt+text)
+		if err != nil {
+			return err
+		}
+		tags, err := json.Marshal(parseTags(rawTags))
+		if err != nil {
+			return err
+		}
+		name, model := p.Identity()
+		now := time.Now().UTC().Format(time.RFC3339)
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, a := range []struct{ kind, content, version string }{
+			{KindSummary, strings.TrimSpace(summary), SummaryPromptVersion},
+			{KindInternalTags, string(tags), TagsPromptVersion},
+		} {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO entry_artifacts(entry_id,kind,content,provider,model,prompt_version,generated_at)
+				VALUES(?,?,?,?,?,?,?)
+				ON CONFLICT(entry_id,kind) DO UPDATE SET content=excluded.content, provider=excluded.provider,
+				model=excluded.model, prompt_version=excluded.prompt_version, generated_at=excluded.generated_at`,
+				e.ID, a.kind, a.content, name, model, a.version, now); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
 	}}
+}
+
+func parseTags(raw string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+		if len(out) == maxInternalTags {
+			break
+		}
+	}
+	return out
 }

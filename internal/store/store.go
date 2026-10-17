@@ -43,6 +43,18 @@ var migrations = []string{
 	);
 	CREATE UNIQUE INDEX jobs_one_active ON jobs(entry_id) WHERE state IN ('queued','running');
 	CREATE INDEX jobs_claim ON jobs(state, run_after);`,
+	// Generated artefacts (summary, internal tags) with provenance. Never written to the raw
+	// entry file and not user-editable; one current row per (entry, kind).
+	`CREATE TABLE entry_artifacts (
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		content TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		PRIMARY KEY (entry_id, kind)
+	);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.
