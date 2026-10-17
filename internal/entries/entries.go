@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	MaxTitle   = 200
+	MaxTitle = 200
 	// DefaultMaxBody is used when Service.MaxBody is unset; config.MaxEntryBytes is the source of truth.
 	DefaultMaxBody = 100 * 1024
-	MaxTags    = 100
-	MaxTagLen  = 50
-	dateLayout = "2006-01-02"
+	MaxTags        = 100
+	MaxTagLen      = 50
+	dateLayout     = "2006-01-02"
 )
 
 // Input is an unvalidated entry submission.
@@ -55,6 +55,10 @@ type Service struct {
 	UserID   string
 	Now      func() time.Time
 	MaxBody  int // max description bytes; 0 means DefaultMaxBody
+
+	// Test seams for failure injection; nil means os.Rename / tx.Commit.
+	Rename func(oldpath, newpath string) error
+	Commit func(tx *sql.Tx) error
 }
 
 // frontMatter holds only user-authored data; generated data must never be written here.
@@ -158,12 +162,17 @@ func (s *Service) Save(ctx context.Context, in Input) (Entry, error) {
 	}
 	defer os.Remove(tmp) // no-op after a successful rename
 
-	if err := s.insert(ctx, id.String(), in, ts, path); err != nil {
+	// Publish the file first, then commit the row: a crash can leave at worst an
+	// unreferenced .md file, never a row without its file.
+	rename := os.Rename
+	if s.Rename != nil {
+		rename = s.Rename
+	}
+	if err := rename(tmp, path); err != nil {
 		return Entry{}, err
 	}
-	// DB is committed; publish the file. On failure undo the rows so no row lacks a file.
-	if err := os.Rename(tmp, path); err != nil {
-		s.remove(id.String())
+	if err := s.insert(ctx, id.String(), in, ts, path); err != nil {
+		os.Remove(path) // commit failed: do not leave an orphan file
 		return Entry{}, err
 	}
 	return Entry{ID: id.String(), Path: path, Status: "pending"}, nil
@@ -189,27 +198,14 @@ func (s *Service) insert(ctx context.Context, id string, in Input, ts, path stri
 		id, in.Title, in.Description, strings.Join(in.Tags, " ")); err != nil {
 		return err
 	}
+	// Queue background processing in the same transaction; the worker picks it up later.
+	if _, err := tx.ExecContext(ctx, `INSERT INTO jobs(entry_id,state,run_after) VALUES (?,'queued',0)`, id); err != nil {
+		return err
+	}
+	if s.Commit != nil {
+		return s.Commit(tx)
+	}
 	return tx.Commit()
-}
-
-// remove best-effort deletes a committed entry whose file could not be published.
-func (s *Service) remove(id string) {
-	ctx := context.Background()
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return
-	}
-	defer tx.Rollback()
-	for _, q := range []string{
-		`DELETE FROM entries_fts WHERE entry_id=?`,
-		`DELETE FROM entry_tags WHERE entry_id=?`,
-		`DELETE FROM entries WHERE id=?`,
-	} {
-		if _, err := tx.ExecContext(ctx, q, id); err != nil {
-			return
-		}
-	}
-	tx.Commit()
 }
 
 // stage writes data to a synced temp file in dir and returns its path.

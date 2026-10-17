@@ -7,5 +7,7 @@ db_path: ./data/journaletto.db
 # fake | local | external
 provider: fake
 max_retries: 3
+# Number of concurrent background processing workers
+worker_concurrency: 1
 # Max size of one journal entry in bytes
 max_entry_bytes: 102400

@@ -2,6 +2,7 @@ package entries_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -120,6 +121,28 @@ func TestSaveLeavesNoOrphanFileWhenDBFails(t *testing.T) {
 	}
 	if count() != 0 {
 		t.Fatal("row left behind")
+	}
+}
+
+func TestSaveRenameFailureLeavesNoRowAndNoFile(t *testing.T) {
+	svc, root, count := newSvc(t)
+	svc.Rename = func(string, string) error { return errors.New("disk full") }
+	if _, err := svc.Save(context.Background(), entries.Input{Title: "t"}); err == nil {
+		t.Fatal("expected error")
+	}
+	if count() != 0 || len(mdFiles(t, root)) != 0 {
+		t.Fatalf("rows=%d files=%v", count(), mdFiles(t, root))
+	}
+}
+
+func TestSaveCommitFailureRemovesPublishedFile(t *testing.T) {
+	svc, root, count := newSvc(t)
+	svc.Commit = func(*sql.Tx) error { return errors.New("commit failed") } // tx is rolled back by Save
+	if _, err := svc.Save(context.Background(), entries.Input{Title: "t"}); err == nil {
+		t.Fatal("expected error")
+	}
+	if count() != 0 || len(mdFiles(t, root)) != 0 {
+		t.Fatalf("rows=%d files=%v", count(), mdFiles(t, root))
 	}
 }
 

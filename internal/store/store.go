@@ -31,6 +31,18 @@ var migrations = []string{
 	);
 	CREATE INDEX entry_tags_user_tag ON entry_tags(user_id, tag);
 	CREATE VIRTUAL TABLE entries_fts USING fts5(entry_id UNINDEXED, title, body, tags);`,
+	// Background job queue: one row per processing run of an entry.
+	// state: queued | running | done | failed. run_after is unix milliseconds.
+	`CREATE TABLE jobs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		state TEXT NOT NULL DEFAULT 'queued',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		run_after INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT NOT NULL DEFAULT ''
+	);
+	CREATE UNIQUE INDEX jobs_one_active ON jobs(entry_id) WHERE state IN ('queued','running');
+	CREATE INDEX jobs_claim ON jobs(state, run_after);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.

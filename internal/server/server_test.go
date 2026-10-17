@@ -104,6 +104,42 @@ func TestSaveEntryWritesMarkdownAndCanonicalRows(t *testing.T) {
 	}
 }
 
+func TestStatusFragmentPollsUntilTerminalAndResyncRequeues(t *testing.T) {
+	h, _, scalar := setup(t)
+	var out struct{ ID string }
+	if err := json.Unmarshal(post(h, "application/json", `{"title":"x"}`).Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	get := func(method, path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		return rec
+	}
+	rec := get("GET", "/entries/"+out.ID+"/status")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "every 2s") || !strings.Contains(rec.Body.String(), "pending") {
+		t.Fatalf("pending fragment: %d %s", rec.Code, rec.Body.String())
+	}
+	if page := get("GET", "/entries/"+out.ID); page.Code != 200 || !strings.Contains(page.Body.String(), "/status") {
+		t.Fatalf("entry page: %d", page.Code)
+	}
+
+	scalar(`UPDATE entries SET processing_status='failed' RETURNING id`)
+	rec = get("POST", "/entries/"+out.ID+"/resync")
+	if rec.Code != 202 || !strings.Contains(rec.Body.String(), "pending") {
+		t.Fatalf("resync: %d %s", rec.Code, rec.Body.String())
+	}
+	if n := scalar(`SELECT COUNT(*) FROM jobs WHERE state='queued'`); n != "1" {
+		t.Fatalf("queued jobs = %s", n)
+	}
+	scalar(`UPDATE entries SET processing_status='ready' RETURNING id`)
+	if rec = get("GET", "/entries/"+out.ID+"/status"); strings.Contains(rec.Body.String(), "every 2s") {
+		t.Fatalf("ready fragment still polls: %s", rec.Body.String())
+	}
+	if get("POST", "/entries/nope/resync").Code != 404 {
+		t.Fatal("unknown entry should 404")
+	}
+}
+
 func TestInvalidInputRejected(t *testing.T) {
 	h, cfg, scalar := setup(t)
 	rec := post(h, "application/json", `{"title":"  ","description":"x"}`)
