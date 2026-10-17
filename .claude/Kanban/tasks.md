@@ -8,7 +8,7 @@ Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T01 · PR: —
 What: <end-to-end behaviour this vertical slice delivers, user's perspective>
 Acceptance:
 - [ ] <criterion — becomes ≤ 2 tests>
-Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines> ALSO (PR #6 review): in internal/worker/worker.go ~51 a startup Sweep error makes Run return before workers start while main only logs it; make Run log and continue (or make main exit) and add a test.
+Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 -->
 
 # Kanban
@@ -21,7 +21,7 @@ What: Processing generates a compact summary and hidden internal tags for each e
 Acceptance:
 - [ ] After processing, summary and internal tags are stored (not in the raw file, not an editable field)
 - [ ] Provider, model, prompt version and timestamp stored with the artefact
-Notes: Raw file must never contain generated data (JE-004/JE-007). Prompts are versioned constants. Use fake provider in tests.
+Notes: Raw file must never contain generated data (JE-004/JE-007). Prompts are versioned constants. Use fake provider in tests. ALSO (PR #6 review): in internal/worker/worker.go ~51 a startup Sweep error makes Run return before workers start while main only logs it; make Run log and continue (or make main exit) and add a test.
 
 ## M1-T04 · Entity extraction and relationships
 Status: To Do · Mode: AFK · Assignee: — · Blocked by: M1-T03 · PR: —
