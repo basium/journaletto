@@ -16,7 +16,7 @@ Notes: <PRD/TechSpec knowledge the agent needs, copied in, ≤ 5 lines>
 Module: M1 · 2026-10-14-journal-entry-service
 
 ## M1-T02 · Background processing, statuses, retry, resync
-Status: In Progress · Mode: AFK · Assignee: developer · Blocked by: M1-T12 · PR: —
+Status: Code Review · Mode: AFK · Assignee: developer · Blocked by: M1-T12 · PR: #6
 What: Saved entries are picked up by an in-process worker; status moves pending → processing → ready/failed and can be retried or resynced.
 Acceptance:
 - [ ] With the fake provider an entry reaches `ready`; failures retry 3× with exponential backoff, then `failed`
