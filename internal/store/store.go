@@ -104,6 +104,19 @@ var migrations = []string{
 			PRIMARY KEY (chunk_id, entity_id)
 		);
 		CREATE VIRTUAL TABLE chunks_fts USING fts5(chunk_id UNINDEXED, entry_id UNINDEXED, text);`,
+	// Chunk embeddings with provenance. Vectors are little-endian float32 BLOBs searched by
+	// brute-force cosine similarity (sqlite-vec is not available with the CGO-free driver).
+	// Deleted with their chunk, so reprocessing never leaves duplicates.
+	`CREATE TABLE chunk_embeddings (
+		chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		dims INTEGER NOT NULL,
+		vector BLOB NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		generated_at TEXT NOT NULL
+	);
+	CREATE INDEX chunk_embeddings_entry ON chunk_embeddings(entry_id);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.
