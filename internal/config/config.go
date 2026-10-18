@@ -22,6 +22,14 @@ type Config struct {
 	WorkerConcurrency int    `yaml:"worker_concurrency"`
 	Version           string `yaml:"-"`
 	Commit            string `yaml:"-"`
+
+	// Ollama adapter (provider: local).
+	OllamaEndpoint       string  `yaml:"ollama_endpoint"`
+	OllamaLLMModel       string  `yaml:"ollama_llm_model"`
+	OllamaEmbedModel     string  `yaml:"ollama_embed_model"`
+	OllamaTimeoutSeconds int     `yaml:"ollama_timeout_seconds"`
+	OllamaNumCtx         int     `yaml:"ollama_num_ctx"`
+	OllamaTemperature    float64 `yaml:"ollama_temperature"`
 }
 
 func defaults() Config {
@@ -29,6 +37,8 @@ func defaults() Config {
 		Port: 3000, DevUserID: "dev-user", DataRoot: "./data", DBPath: "./data/journaletto.db",
 		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 102400, WorkerConcurrency: 1,
 		Version: "dev", Commit: "unknown",
+		OllamaEndpoint: "http://localhost:11434", OllamaLLMModel: "llama3.1", OllamaEmbedModel: "nomic-embed-text",
+		OllamaTimeoutSeconds: 120, OllamaNumCtx: 8192,
 	}
 }
 
@@ -71,6 +81,18 @@ func Load() (Config, error) {
 	setInt("MAX_RETRIES", &c.MaxRetries)
 	setInt("MAX_ENTRY_BYTES", &c.MaxEntryBytes)
 	setInt("WORKER_CONCURRENCY", &c.WorkerConcurrency)
+	setStr("OLLAMA_ENDPOINT", &c.OllamaEndpoint)
+	setStr("OLLAMA_LLM_MODEL", &c.OllamaLLMModel)
+	setStr("OLLAMA_EMBED_MODEL", &c.OllamaEmbedModel)
+	setInt("OLLAMA_TIMEOUT_SECONDS", &c.OllamaTimeoutSeconds)
+	setInt("OLLAMA_NUM_CTX", &c.OllamaNumCtx)
+	if v := os.Getenv("OLLAMA_TEMPERATURE"); v != "" {
+		f, e := strconv.ParseFloat(v, 64)
+		if e != nil {
+			return c, fmt.Errorf("OLLAMA_TEMPERATURE must be a number: %w", e)
+		}
+		c.OllamaTemperature = f
+	}
 	setStr("VERSION", &c.Version)
 	setStr("COMMIT", &c.Commit)
 	if err != nil {
