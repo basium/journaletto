@@ -55,6 +55,105 @@ var migrations = []string{
 		generated_at TEXT NOT NULL,
 		PRIMARY KEY (entry_id, kind)
 	);`,
+	// Extracted entities and relations (graph source data) with provenance. Entities are unique
+	// per (entry, type, normalised value); relations are unique per (from, to, kind).
+	`CREATE TABLE entities (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		type TEXT NOT NULL,
+		value TEXT NOT NULL,
+		norm_value TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		UNIQUE (entry_id, type, norm_value)
+	);
+	CREATE TABLE entity_relations (
+		from_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+		to_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		PRIMARY KEY (from_id, to_id, kind)
+	);
+	CREATE INDEX entities_type_value ON entities(type, norm_value);`,
+	// Semantic chunks: granularity section|fact, each with parent context (entry title and
+	// heading path) and provenance; text is exact-indexed in chunks_fts. chunk_entities links a
+	// chunk to the entities it mentions. Replaced wholesale per entry on reprocessing.
+	`CREATE TABLE chunks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+			granularity TEXT NOT NULL CHECK (granularity IN ('section','fact')),
+			ord INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			heading_path TEXT NOT NULL,
+			context TEXT NOT NULL,
+			text TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			prompt_version TEXT NOT NULL,
+			generated_at TEXT NOT NULL
+		);
+		CREATE INDEX chunks_entry ON chunks(entry_id, ord);
+		CREATE TABLE chunk_entities (
+			chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+			entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+			PRIMARY KEY (chunk_id, entity_id)
+		);
+		CREATE VIRTUAL TABLE chunks_fts USING fts5(chunk_id UNINDEXED, entry_id UNINDEXED, text);`,
+	// Chunk embeddings with provenance. Vectors are little-endian float32 BLOBs searched by
+	// brute-force cosine similarity (sqlite-vec is not available with the CGO-free driver).
+	// Deleted with their chunk, so reprocessing never leaves duplicates.
+	`CREATE TABLE chunk_embeddings (
+		chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		dims INTEGER NOT NULL,
+		vector BLOB NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		generated_at TEXT NOT NULL
+	);
+	CREATE INDEX chunk_embeddings_entry ON chunk_embeddings(entry_id);`,
+	// Developer-configured detection rules (no UI) and the occurrences they find. An
+	// occurrence is unique per (entry, rule, normalised event), so reprocessing never
+	// double-counts. rule_evaluations records which rule version each entry was last
+	// evaluated against, so a version bump can requeue active entries.
+	`CREATE TABLE detection_rules (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		detection_prompt TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		minimum_confidence REAL NOT NULL,
+		version INTEGER NOT NULL
+	);
+	INSERT INTO detection_rules(id,name,description,detection_prompt,enabled,minimum_confidence,version) VALUES
+		('closed-ticket','Closed ticket','The author closed or resolved a ticket or issue.','The author closed, resolved or completed a ticket or issue.',1,0.8,1),
+		('merged-pr','Merged pull request','The author merged a pull request.','The author merged a pull request or merge request.',1,0.8,1);
+	CREATE TABLE occurrences (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+		rule_version INTEGER NOT NULL,
+		event_key TEXT NOT NULL,
+		excerpt TEXT NOT NULL,
+		confidence REAL NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		UNIQUE (entry_id, rule_id, event_key)
+	);
+	CREATE INDEX occurrences_rule ON occurrences(rule_id);
+	CREATE TABLE rule_evaluations (
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+		rule_version INTEGER NOT NULL,
+		PRIMARY KEY (entry_id, rule_id)
+	);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.

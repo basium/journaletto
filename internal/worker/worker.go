@@ -52,6 +52,9 @@ func (w *Worker) Run(ctx context.Context) error {
 		// Not fatal: queued jobs are still processed, and the next startup sweeps again.
 		log.Printf("worker: startup sweep: %v", err)
 	}
+	if _, err := RequeueStaleRules(ctx, w.DB); err != nil {
+		log.Printf("worker: requeue stale rules: %v", err)
+	}
 	n := w.Concurrency
 	if n < 1 {
 		n = 1
