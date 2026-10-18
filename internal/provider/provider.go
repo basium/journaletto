@@ -55,7 +55,13 @@ type Fake struct{}
 // canned JSON so the pipeline can be tested offline.
 const EntityPromptPrefix = "Extract entities"
 
+// FactPromptPrefix starts every fact-chunk prompt; the fake adapter answers with canned JSON.
+const FactPromptPrefix = "Extract facts"
+
 func (Fake) Complete(_ context.Context, prompt string) (string, error) {
+	if strings.HasPrefix(prompt, FactPromptPrefix) {
+		return `["The entry was processed by the fake provider."]`, nil
+	}
 	if strings.HasPrefix(prompt, EntityPromptPrefix) {
 		return `[{"type":"Concepts","value":"Journaling","relations":[{"to":"Fake Project","kind":"part_of"}]},` +
 			`{"type":"Projects","value":"Fake Project","relations":[]}]`, nil

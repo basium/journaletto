@@ -80,6 +80,30 @@ var migrations = []string{
 		PRIMARY KEY (from_id, to_id, kind)
 	);
 	CREATE INDEX entities_type_value ON entities(type, norm_value);`,
+	// Semantic chunks: granularity section|fact, each with parent context (entry title and
+	// heading path) and provenance; text is exact-indexed in chunks_fts. chunk_entities links a
+	// chunk to the entities it mentions. Replaced wholesale per entry on reprocessing.
+	`CREATE TABLE chunks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+			granularity TEXT NOT NULL CHECK (granularity IN ('section','fact')),
+			ord INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			heading_path TEXT NOT NULL,
+			context TEXT NOT NULL,
+			text TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			prompt_version TEXT NOT NULL,
+			generated_at TEXT NOT NULL
+		);
+		CREATE INDEX chunks_entry ON chunks(entry_id, ord);
+		CREATE TABLE chunk_entities (
+			chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+			entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+			PRIMARY KEY (chunk_id, entity_id)
+		);
+		CREATE VIRTUAL TABLE chunks_fts USING fts5(chunk_id UNINDEXED, entry_id UNINDEXED, text);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.
