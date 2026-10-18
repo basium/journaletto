@@ -90,7 +90,11 @@ func (o *Ollama) post(ctx context.Context, path string, body any, out any) error
 		return fmt.Errorf("ollama %s: %w", path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ollama %s: HTTP %d: %s", path, resp.StatusCode, strings.TrimSpace(string(data)))
+		err := fmt.Errorf("ollama %s: HTTP %d: %s", path, resp.StatusCode, strings.TrimSpace(string(data)))
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf("%w: %w", err, ErrUnavailable) // transient: worth retrying
+		}
+		return err // other 4xx: permanent
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("ollama %s: bad response: %w", path, err)

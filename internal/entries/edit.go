@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,14 +158,31 @@ func (s *Service) Update(ctx context.Context, id string, in Input) (Entry, error
 	}
 	if err := s.replace(ctx, id, in, ts); err != nil {
 		// Commit failed: put the previous content back so file and row agree.
-		if rtmp, serr := stage(dir, prev); serr == nil {
-			if os.Rename(rtmp, path) != nil {
-				os.Remove(rtmp)
-			}
+		if rerr := restore(dir, path, prev, rename); rerr != nil {
+			return Entry{}, errors.Join(err, fmt.Errorf("restoring previous content of %s (file and database now disagree): %w", path, rerr))
 		}
 		return Entry{}, err
 	}
 	return Entry{ID: id, Path: path, Status: "pending"}, nil
+}
+
+// restore atomically puts prev back at path, cleaning up its temp file if the rename fails.
+func restore(dir, path string, prev []byte, rename func(string, string) error) error {
+	rtmp, err := stage(dir, prev)
+	if err != nil {
+		return err
+	}
+	if err := rename(rtmp, path); err != nil {
+		return errors.Join(err, removeIfExists(rtmp))
+	}
+	return nil
+}
+
+func removeIfExists(p string) error {
+	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) replace(ctx context.Context, id string, in Input, ts string) error {

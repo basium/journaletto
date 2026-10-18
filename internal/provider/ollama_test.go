@@ -3,8 +3,10 @@ package provider_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +58,25 @@ func TestOllamaEmbedReturnsVector(t *testing.T) {
 	}
 	if got["model"] != "emb-y" || got["input"] != "text" {
 		t.Errorf("request body: %v", got)
+	}
+}
+
+func TestOllamaClassifiesHTTPStatuses(t *testing.T) {
+	var code int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", code)
+	}))
+	defer srv.Close()
+	o := provider.NewOllama(provider.OllamaConfig{Endpoint: srv.URL, LLMModel: "l", EmbedModel: "e"})
+	for _, tc := range []struct {
+		code        int
+		unavailable bool
+	}{{500, true}, {503, true}, {429, true}, {400, false}, {404, false}} {
+		code = tc.code
+		_, err := o.Embed(context.Background(), "x")
+		if err == nil || errors.Is(err, provider.ErrUnavailable) != tc.unavailable || !strings.Contains(err.Error(), strconv.Itoa(tc.code)) {
+			t.Errorf("HTTP %d: err=%v, want unavailable=%v", tc.code, err, tc.unavailable)
+		}
 	}
 }
 

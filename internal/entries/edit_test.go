@@ -109,6 +109,35 @@ func TestEditKeepsIdentityKeepsOneVersionAndReprocessesWithoutDuplicates(t *test
 	}
 }
 
+func TestEditCommitFailureRestoresFileAndReportsFailedRestore(t *testing.T) {
+	svc, _, _ := newSvc(t)
+	saved, err := svc.Save(context.Background(), entries.Input{Title: "Keep", Description: "orig"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Commit = func(*sql.Tx) error { return errors.New("commit failed") }
+
+	if _, err := svc.Update(context.Background(), saved.ID, entries.Input{Title: "New", Description: "changed"}); err == nil || !strings.Contains(err.Error(), "commit failed") {
+		t.Fatalf("err = %v", err)
+	}
+	if raw, _ := os.ReadFile(saved.Path); !strings.Contains(string(raw), "orig") {
+		t.Errorf("file not restored after failed commit:\n%s", raw)
+	}
+
+	// If the restore itself fails (3rd rename: version, publish, restore) both errors are reported.
+	calls := 0
+	svc.Rename = func(o, n string) error {
+		if calls++; calls == 3 {
+			return errors.New("restore denied")
+		}
+		return os.Rename(o, n)
+	}
+	_, err = svc.Update(context.Background(), saved.ID, entries.Input{Title: "New2", Description: "changed2"})
+	if err == nil || !strings.Contains(err.Error(), "commit failed") || !strings.Contains(err.Error(), "restore denied") {
+		t.Fatalf("err = %v, want both commit and restore errors", err)
+	}
+}
+
 func TestEditValidatesLikeCreateAndLeavesEntryUntouched(t *testing.T) {
 	svc, _, _ := newSvc(t)
 	saved, err := svc.Save(context.Background(), entries.Input{Title: "Keep", Description: "orig"})
