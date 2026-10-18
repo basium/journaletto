@@ -10,8 +10,23 @@
   <script src="/static/htmx.min.js"></script>
 </head>
 <body>
-  <h1>Entry {{.ID}}</h1>
-  <div hx-get="/entries/{{.ID}}/status" hx-trigger="load" hx-swap="outerHTML">Loading status...</div>
-  <p><a href="/">Back</a></p>
+  <h1>{{.Title}}</h1>
+  <p class="meta">Journal date: <span class="journal-date">{{.JournalDate}}</span>
+    · Created: <time class="local-time" datetime="{{.CreatedAt}}">{{.CreatedAt}}</time>
+    · Updated: <time class="local-time" datetime="{{.UpdatedAt}}">{{.UpdatedAt}}</time></p>
+  <section id="body"><h2>Entry</h2><pre class="body">{{.Body}}</pre></section>
+  <section id="user-tags"><h2>Tags</h2><ul>{{range .Tags}}<li>{{.}}</li>{{else}}<li><em>none</em></li>{{end}}</ul></section>
+  <section id="generated"><h2>Generated</h2>
+    <div hx-get="/entries/{{.ID}}/status" hx-trigger="load" hx-swap="outerHTML">Loading status...</div>
+    <h3>Summary</h3><p class="summary">{{if .Summary}}{{.Summary}}{{else}}<em>not generated yet</em>{{end}}</p>
+    <h3>Internal tags</h3><ul class="internal-tags">{{range .InternalTags}}<li>{{.}}</li>{{else}}<li><em>none</em></li>{{end}}</ul>
+  </section>
+  <p><a href="/entries/{{.ID}}/edit">Edit</a> · <a href="/">Back</a></p>
+  <script>
+    document.querySelectorAll("time.local-time").forEach(function (t) {
+      var d = new Date(t.getAttribute("datetime"));
+      if (!isNaN(d)) t.textContent = d.toLocaleString();
+    });
+  </script>
 </body>
 </html>

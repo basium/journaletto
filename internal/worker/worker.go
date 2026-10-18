@@ -146,10 +146,14 @@ func (w *Worker) process(ctx context.Context, e Entry) (err error) {
 }
 
 func (w *Worker) finish(ctx context.Context, jobID int64, entryID, jobState, entryStatus, lastErr string, runAfter int64) error {
-	if _, err := w.DB.ExecContext(ctx, `UPDATE jobs SET state=?, last_error=?, run_after=? WHERE id=?`, jobState, lastErr, runAfter, jobID); err != nil {
+	res, err := w.DB.ExecContext(ctx, `UPDATE jobs SET state=?, last_error=?, run_after=? WHERE id=? AND state='running'`, jobState, lastErr, runAfter, jobID)
+	if err != nil {
 		return err
 	}
-	_, err := w.DB.ExecContext(ctx, `UPDATE entries SET processing_status=? WHERE id=?`, entryStatus, entryID)
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil // the entry was edited and the job requeued meanwhile; the rerun reports the outcome
+	}
+	_, err = w.DB.ExecContext(ctx, `UPDATE entries SET processing_status=? WHERE id=?`, entryStatus, entryID)
 	return err
 }
 

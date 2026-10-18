@@ -140,6 +140,56 @@ func TestStatusFragmentPollsUntilTerminalAndResyncRequeues(t *testing.T) {
 	}
 }
 
+func TestViewShowsSectionsAndEditRedirectsToUpdatedEntry(t *testing.T) {
+	h, _, scalar := setup(t)
+	var out struct{ ID string }
+	if err := json.Unmarshal(post(h, "application/json", `{"title":"Day <one>","description":"raw **body**","tags":["Mine"],"timezone":"UTC"}`).Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	scalar(`INSERT INTO entry_artifacts(entry_id,kind,content,provider,model,prompt_version,generated_at) VALUES ('` + out.ID + `','summary','SUMMARYTEXT','f','m','v','t') RETURNING kind`)
+	scalar(`INSERT INTO entry_artifacts(entry_id,kind,content,provider,model,prompt_version,generated_at) VALUES ('` + out.ID + `','internal_tags','["hidden1"]','f','m','v','t') RETURNING kind`)
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec
+	}
+	rec := get("/entries/" + out.ID)
+	b := rec.Body.String()
+	created := scalar(`SELECT created_at FROM entries`)
+	for _, want := range []string{"Day &lt;one&gt;", "raw **body**", `<li>mine</li>`, `class="summary">SUMMARYTEXT`, `<li>hidden1</li>`, `<time class="local-time" datetime="` + created + `"`, "/entries/" + out.ID + "/edit"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("view missing %q:\n%s", want, b)
+		}
+	}
+	if form := get("/entries/" + out.ID + "/edit"); form.Code != 200 || !strings.Contains(form.Body.String(), `value="Day &lt;one&gt;"`) {
+		t.Fatalf("edit form: %d %s", form.Code, form.Body.String())
+	}
+
+	edit := func(ct, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/entries/"+out.ID, strings.NewReader(body))
+		req.Header.Set("Content-Type", ct)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	rec = edit("application/x-www-form-urlencoded", url.Values{"title": {"Renamed"}, "description": {"new body"}, "tags": {"x, y"}}.Encode())
+	if rec.Code != 303 || rec.Header().Get("Location") != "/entries/"+out.ID {
+		t.Fatalf("edit: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := scalar(`SELECT title||'|'||body||'|'||processing_status FROM entries`); got != "Renamed|new body|pending" {
+		t.Errorf("row after edit: %s", got)
+	}
+	if rec = edit("application/json", `{"title":""}`); rec.Code != 400 || !strings.Contains(rec.Body.String(), `"title"`) {
+		t.Errorf("invalid edit: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = edit("application/json", `{"title":"x"}`); rec.Code != 200 {
+		t.Errorf("json edit: %d", rec.Code)
+	}
+	if get("/entries/nope").Code != 404 {
+		t.Error("unknown entry should 404")
+	}
+}
+
 func TestInvalidInputRejected(t *testing.T) {
 	h, cfg, scalar := setup(t)
 	rec := post(h, "application/json", `{"title":"  ","description":"x"}`)

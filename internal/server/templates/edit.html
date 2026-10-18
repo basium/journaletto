@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Edit entry</title>
+  <meta name="htmx-config" content='{"responseHandling":[{"code":".*","swap":true}]}'>
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <h1>Edit entry</h1>
+  <form method="post" action="/entries/{{.ID}}" hx-post="/entries/{{.ID}}" hx-target="#result">
+    <p><label>Title <input name="title" maxlength="200" required value="{{.Form.Title}}"></label></p>
+    <p><label>Date <input type="date" name="journal_date" value="{{.Form.JournalDate}}"></label></p>
+    <p><label>Description <textarea name="description" rows="10">{{.Form.Description}}</textarea></label></p>
+    <p><label>Tags (comma separated)
+      <input name="tags" list="tag-suggestions" autocomplete="off" value="{{.TagsText}}"
+        hx-get="/tags" hx-trigger="keyup changed delay:200ms" hx-target="#tag-suggestions" hx-swap="innerHTML">
+    </label>
+    <datalist id="tag-suggestions"></datalist></p>
+    <input type="hidden" name="timezone" value="{{.Form.Timezone}}">
+    <button type="submit">Save changes</button>
+  </form>
+  <div id="result">{{template "result" .}}</div>
+  <p><a href="/entries/{{.ID}}">Cancel</a></p>
+</body>
+</html>
