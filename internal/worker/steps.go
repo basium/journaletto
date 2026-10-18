@@ -42,6 +42,7 @@ func DefaultSteps(db *sql.DB, p provider.Provider) []Step {
 		EntitiesStep(db, p),
 		ChunksStep(db, p),
 		EmbeddingsStep(db, p),
+		RulesStep(db, p),
 	}
 }
 

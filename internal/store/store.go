@@ -117,6 +117,43 @@ var migrations = []string{
 		generated_at TEXT NOT NULL
 	);
 	CREATE INDEX chunk_embeddings_entry ON chunk_embeddings(entry_id);`,
+	// Developer-configured detection rules (no UI) and the occurrences they find. An
+	// occurrence is unique per (entry, rule, normalised event), so reprocessing never
+	// double-counts. rule_evaluations records which rule version each entry was last
+	// evaluated against, so a version bump can requeue active entries.
+	`CREATE TABLE detection_rules (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		detection_prompt TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		minimum_confidence REAL NOT NULL,
+		version INTEGER NOT NULL
+	);
+	INSERT INTO detection_rules(id,name,description,detection_prompt,enabled,minimum_confidence,version) VALUES
+		('closed-ticket','Closed ticket','The author closed or resolved a ticket or issue.','The author closed, resolved or completed a ticket or issue.',1,0.8,1),
+		('merged-pr','Merged pull request','The author merged a pull request.','The author merged a pull request or merge request.',1,0.8,1);
+	CREATE TABLE occurrences (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+		rule_version INTEGER NOT NULL,
+		event_key TEXT NOT NULL,
+		excerpt TEXT NOT NULL,
+		confidence REAL NOT NULL,
+		provider TEXT NOT NULL,
+		model TEXT NOT NULL,
+		prompt_version TEXT NOT NULL,
+		generated_at TEXT NOT NULL,
+		UNIQUE (entry_id, rule_id, event_key)
+	);
+	CREATE INDEX occurrences_rule ON occurrences(rule_id);
+	CREATE TABLE rule_evaluations (
+		entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+		rule_version INTEGER NOT NULL,
+		PRIMARY KEY (entry_id, rule_id)
+	);`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.

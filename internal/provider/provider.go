@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -58,7 +59,43 @@ const EntityPromptPrefix = "Extract entities"
 // FactPromptPrefix starts every fact-chunk prompt; the fake adapter answers with canned JSON.
 const FactPromptPrefix = "Extract facts"
 
+// DetectPromptPrefix starts every detection-rule prompt. The fake adapter answers it by
+// keyword-matching lines of the entry (after "Entry:\n") for the rule named in the first line:
+// "closed ticket" for closed-ticket, "merged pr" for merged-pr; lines containing "maybe" get
+// low confidence.
+const DetectPromptPrefix = "Detect occurrences"
+
+func fakeDetect(prompt string) string {
+	head, entry, _ := strings.Cut(prompt, "\n\nEntry:\n")
+	first, _, _ := strings.Cut(head, "\n")
+	keyword := map[string]string{"closed-ticket": "closed ticket", "merged-pr": "merged pr"}
+	var kw string
+	for id, k := range keyword {
+		if strings.HasSuffix(strings.TrimSpace(first), "rule "+id+".") {
+			kw = k
+		}
+	}
+	out := []map[string]any{}
+	for _, line := range strings.Split(entry, "\n") {
+		l := strings.TrimSpace(line)
+		low := strings.ToLower(l)
+		if kw == "" || !strings.Contains(low, kw) {
+			continue
+		}
+		conf := 0.9
+		if strings.Contains(low, "maybe") {
+			conf = 0.5
+		}
+		out = append(out, map[string]any{"event": low, "excerpt": l, "confidence": conf})
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
 func (Fake) Complete(_ context.Context, prompt string) (string, error) {
+	if strings.HasPrefix(prompt, DetectPromptPrefix) {
+		return fakeDetect(prompt), nil
+	}
 	if strings.HasPrefix(prompt, FactPromptPrefix) {
 		return `["The entry was processed by the fake provider."]`, nil
 	}
