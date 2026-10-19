@@ -23,6 +23,11 @@
   <div id="result">{{template "result" .}}</div>
   <script>
     document.getElementById("timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    var dateEl = document.querySelector('input[name="journal_date"]');
+    if (!dateEl.value) {
+      var d = new Date(), p = function (n) { return String(n).padStart(2, "0"); };
+      dateEl.value = d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+    }
   </script>
 </body>
 </html>

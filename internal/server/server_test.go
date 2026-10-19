@@ -68,6 +68,46 @@ func TestHomeServesFormWithVendoredHTMX(t *testing.T) {
 	}
 }
 
+func TestDateDefaultsClientSideOnlyWhenEmpty(t *testing.T) {
+	h, _, _ := setup(t)
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec.Body.String()
+	}
+	home := get("/")
+	if !strings.Contains(home, `name="journal_date" value=""`) || !strings.Contains(home, `if (!dateEl.value)`) || !strings.Contains(home, "getFullYear()") || strings.Contains(home, "toISOString") {
+		t.Errorf("new page should default date client-side from local parts when empty:\n%s", home)
+	}
+	var out struct{ ID string }
+	if err := json.Unmarshal(post(h, "application/json", `{"title":"T","journal_date":"2026-03-04","timezone":"UTC"}`).Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if edit := get("/entries/" + out.ID + "/edit"); !strings.Contains(edit, `name="journal_date" value="2026-03-04"`) {
+		t.Errorf("edit page should show stored date:\n%s", edit)
+	}
+}
+
+func TestFailedSaveKeepsChosenDate(t *testing.T) {
+	h, _, _ := setup(t)
+	form := url.Values{"journal_date": {"2026-02-03"}, "description": {"d"}}
+	req := httptest.NewRequest(http.MethodPost, "/entries", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), `name="journal_date" value="2026-02-03"`) {
+		t.Fatalf("re-rendered form should keep chosen date: %d\n%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/entries", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 || strings.Contains(rec.Body.String(), "<form") {
+		t.Fatalf("htmx failure should return only the error fragment (form and date untouched): %d\n%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSaveEntryWritesMarkdownAndCanonicalRows(t *testing.T) {
 	h, cfg, scalar := setup(t)
 	rec := post(h, "application/json", `{"title":"Day one","journal_date":"2026-03-04","description":"Hello **world**","tags":["Work","work"," Home "],"timezone":"Europe/Rome"}`)
