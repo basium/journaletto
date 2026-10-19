@@ -22,6 +22,15 @@ PROVIDER=local docker compose -f compose.yml -f compose.gpu.yml --profile local-
 - CPU works but is slow for the LLM. `compose.gpu.yml` reserves all NVIDIA GPUs (needs the NVIDIA driver and nvidia-container-toolkit on the host).
 - Without Docker for Ollama: install Ollama on the host (`ollama pull llama3.1 && ollama pull nomic-embed-text`) and run the app with `PROVIDER=local` (endpoint defaults to `http://localhost:11434`). If the app itself runs in a container, set `OLLAMA_ENDPOINT=http://host.docker.internal:11434` (on Linux add `extra_hosts: ["host.docker.internal:host-gateway"]`) and do not use the profile.
 
+## Grounding and extraction evaluation
+Generated entities, fact chunks and rule excerpts are kept only when the entry text supports them (entities and excerpts must appear verbatim after case/whitespace/markdown normalisation; facts need most of their content words and all numbers in the entry). Drops are logged by entry id, type and reason only. Section chunks and the summary are exempt.
+
+`internal/eval/testdata` holds 10 labelled sample entries (`NAME.md` body, `NAME.json` expected entities and rule hits). The default `go test ./...` only checks that the set loads and the metrics work, using the fake provider. To measure a real model (opt-in, needs Ollama running):
+```
+go test ./internal/eval -run TestEvalRealModel -tags=eval -v -timeout 30m
+```
+It honours `OLLAMA_ENDPOINT` (default `http://localhost:11434`) and `OLLAMA_LLM_MODEL` (default `llama3.1`) and prints precision/recall per entry for entities and rules, plus the mean.
+
 ## Operators
 Read **[GUIDE.md](GUIDE.md)** — what you write, when you approve, how to unblock, every command.
 

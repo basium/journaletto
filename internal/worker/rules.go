@@ -65,6 +65,7 @@ func RulesStep(db *sql.DB, p provider.Provider) Step {
 			return err
 		}
 		name, model := p.Identity()
+		g := newGrounding(e)
 		for _, r := range rules {
 			out, err := p.Complete(ctx, rulePrompt(r, e))
 			if err != nil {
@@ -84,6 +85,10 @@ func RulesStep(db *sql.DB, p provider.Provider) Step {
 				}
 				if key == "" || o.Excerpt == "" || o.Confidence < r.MinimumConfidence || o.Confidence > 1 {
 					log.Printf("rules: entry %s: ignored occurrence of rule %s (confidence=%v)", e.ID, r.ID, o.Confidence)
+					continue
+				}
+				if !g.contains(o.Excerpt) {
+					g.drop("rule excerpt rule="+r.ID, notInEntry)
 					continue
 				}
 				prev, seen := best[key]
