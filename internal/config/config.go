@@ -38,7 +38,7 @@ func defaults() Config {
 		Provider: "fake", MaxRetries: 3, MaxEntryBytes: 102400, WorkerConcurrency: 1,
 		Version: "dev", Commit: "unknown",
 		OllamaEndpoint: "http://localhost:11434", OllamaLLMModel: "llama3.1", OllamaEmbedModel: "nomic-embed-text",
-		OllamaTimeoutSeconds: 120, OllamaNumCtx: 8192,
+		OllamaTimeoutSeconds: 600, OllamaNumCtx: 8192,
 	}
 }
 
