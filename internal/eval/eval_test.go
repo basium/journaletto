@@ -31,6 +31,9 @@ func TestSampleSetLoadsAndRunsWithFakeProvider(t *testing.T) {
 		t.Fatalf("results = %d", len(results))
 	}
 	for _, r := range results {
+		if !r.SummaryClean {
+			t.Errorf("%s: summary not clean", r.Name)
+		}
 		for _, v := range []float64{r.Entities.Precision, r.Entities.Recall, r.Rules.Precision, r.Rules.Recall} {
 			if v < 0 || v > 1 || math.IsNaN(v) {
 				t.Errorf("%s: score out of range: %v", r.Name, v)
@@ -39,6 +42,9 @@ func TestSampleSetLoadsAndRunsWithFakeProvider(t *testing.T) {
 	}
 	if !strings.Contains(eval.Report(results), "MEAN") {
 		t.Error("report lacks mean row")
+	}
+	if !strings.Contains(eval.Report(results), "summaries without preamble") {
+		t.Error("report lacks summary preamble check")
 	}
 }
 

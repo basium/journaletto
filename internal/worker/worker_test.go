@@ -308,6 +308,38 @@ func TestBlankSummaryFailsTheStepInsteadOfReady(t *testing.T) {
 	}
 }
 
+func TestSummaryStoredWithoutLeadingPreambleAndPromptForbidsIt(t *testing.T) {
+	for name, tc := range map[string]struct{ reply, want string }{
+		"with preamble":    {"Here is a summary of the entry:\n\nShipped the release.", "Shipped the release."},
+		"without preamble": {"  Shipped the release.  ", "Shipped the release."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, svc := setup(t)
+			id := save(t, svc)
+			var prompt string
+			llm := stubLLM{complete: func(p string) string {
+				if strings.HasPrefix(p, "Summarise") {
+					prompt = p
+					return tc.reply
+				}
+				return "\x00"
+			}}
+			start(t, &worker.Worker{DB: db, Steps: worker.DefaultSteps(db, llm), MaxRetries: 0})
+			waitStatus(t, db, id, "ready")
+			var got string
+			if err := db.QueryRow(`SELECT content FROM entry_artifacts WHERE entry_id=? AND kind=?`, id, worker.KindSummary).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("summary = %q, want %q", got, tc.want)
+			}
+			if !strings.Contains(strings.ToLower(prompt), "no preamble") {
+				t.Error("prompt does not forbid a preamble")
+			}
+		})
+	}
+}
+
 func TestSweepFailureDoesNotStopWorkers(t *testing.T) {
 	db, svc := setup(t)
 	queued, orphan := save(t, svc), save(t, svc)

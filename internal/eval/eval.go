@@ -41,6 +41,9 @@ type Result struct {
 	Entities Score
 	Rules    Score
 	Got      struct{ Entities, Rules []string }
+
+	// SummaryClean is true when the stored summary is non-empty and has no leading LLM preamble.
+	SummaryClean bool
 }
 
 func norm(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
@@ -120,7 +123,7 @@ func Run(ctx context.Context, p provider.Provider, samples []Sample) ([]Result, 
 	}
 	defer db.Close()
 	svc := &entries.Service{DB: db, DataRoot: dir, UserID: "eval"}
-	steps := []worker.Step{worker.EntitiesStep(db, p), worker.RulesStep(db, p)}
+	steps := []worker.Step{worker.SummaryTagsStep(db, p), worker.EntitiesStep(db, p), worker.RulesStep(db, p)}
 
 	var results []Result
 	for _, s := range samples {
@@ -141,6 +144,11 @@ func Run(ctx context.Context, p provider.Provider, samples []Sample) ([]Result, 
 		if r.Got.Rules, err = column(ctx, db, `SELECT DISTINCT rule_id FROM occurrences WHERE entry_id=?`, saved.ID); err != nil {
 			return nil, err
 		}
+		sum, err := column(ctx, db, `SELECT content FROM entry_artifacts WHERE entry_id=? AND kind=?`, saved.ID, worker.KindSummary)
+		if err != nil {
+			return nil, err
+		}
+		r.SummaryClean = len(sum) == 1 && sum[0] != "" && worker.StripPreamble(sum[0]) == sum[0]
 		r.Entities, r.Rules = Measure(s.Entities, r.Got.Entities), Measure(s.Rules, r.Got.Rules)
 		results = append(results, r)
 	}
@@ -173,6 +181,13 @@ func Report(results []Result) string {
 		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f\n", r.Name, r.Entities.Precision, r.Entities.Recall, r.Rules.Precision, r.Rules.Recall)
 		ep, er, rp, rr = ep+r.Entities.Precision, er+r.Entities.Recall, rp+r.Rules.Precision, rr+r.Rules.Recall
 	}
+	clean := 0
+	for _, r := range results {
+		if r.SummaryClean {
+			clean++
+		}
+	}
+	fmt.Fprintf(&b, "summaries without preamble: %d/%d\n", clean, len(results))
 	if n := float64(len(results)); n > 0 {
 		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f\n", "MEAN", ep/n, er/n, rp/n, rr/n)
 	}

@@ -126,6 +126,10 @@ func (Fake) Complete(_ context.Context, prompt string) (string, error) {
 		})
 		return string(b), nil
 	}
+	// Echo the entry text (after the instructions) so a long instruction line cannot crowd it out.
+	if _, entry, ok := strings.Cut(prompt, "\n\n"); ok {
+		prompt = entry
+	}
 	r := []rune(strings.TrimSpace(prompt))
 	if len(r) > 80 {
 		r = r[:80]
