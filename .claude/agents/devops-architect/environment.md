@@ -6,6 +6,7 @@ Stack: Go (single static binary, embedded SQLite via modernc, server-rendered te
 ## Local development
 - `go run ./cmd/journaletto` for day-to-day work; `npm run check` is the CI gate (wraps the Go checks).
 - `docker compose up` (from `compose.yml`) runs the app with a named volume on `/data`. No external services: SQLite is embedded; `compose.ci.yml` is only an overlay that adds `.env.ci`.
+- Optional Ollama: `docker compose --profile local-llm up` (with `PROVIDER=local`) adds `ollama` (volume `ollama-models`) and one-shot `ollama-pull` (pulls `OLLAMA_LLM_MODEL`/`OLLAMA_EMBED_MODEL`); `app` waits on them via `depends_on ... required: false`, so the default `up` (PROVIDER=fake) is unchanged. `compose.gpu.yml` is an optional NVIDIA override; `compose.ci.yml` does not involve Ollama. Non-Docker alternative: system Ollama at `localhost:11434` (`host.docker.internal` from a container). See README.
 - Config only through env vars (and optional YAML, see `config.example.yaml`); `.env.example` lists every variable with a safe default. Real `.env` is never committed.
 
 ## Docker
