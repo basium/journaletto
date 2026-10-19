@@ -78,7 +78,7 @@ func TestFactChunksFromProviderWithProvenanceAndReplacedOnReprocess(t *testing.T
 		}
 		calls++
 		if calls == 1 {
-			return `["Ada Lovelace reviewed the weekly review.","Second fact."]`
+			return `["Ada Lovelace reviewed the weekly review.","Weekly review notes mention Ada Lovelace."]`
 		}
 		return "```json\n" + `[{"fact":"Ada Lovelace approved the weekly review.","section":"notes"}]` + "\n```"
 	}}

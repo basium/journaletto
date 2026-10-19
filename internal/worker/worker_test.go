@@ -236,7 +236,7 @@ func count(t *testing.T, db *sql.DB, q string, args ...any) int {
 
 func TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess(t *testing.T) {
 	db, svc := setup(t)
-	id := save(t, svc)
+	id := saveBody(t, svc, "t", "Ada Lovelace works on Journaletto.")
 	var calls atomic.Int32
 	llm := stubLLM{complete: func(p string) string {
 		if !strings.HasPrefix(p, provider.EntityPromptPrefix) {

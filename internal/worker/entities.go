@@ -92,11 +92,16 @@ func EntitiesStep(db *sql.DB, p provider.Provider) Step {
 			kind   string
 		}
 		var rels []rel
+		g := newGrounding(e)
 		for _, r := range raw {
 			typ, ok := canonicalType(r.Type)
 			val := normSpace(r.Value)
 			if !ok || val == "" {
 				log.Printf("entities: entry %s: dropped invalid entity (type=%q, reason=unknown type or blank value)", e.ID, r.Type)
+				continue
+			}
+			if !g.contains(val) {
+				g.drop("entity type="+typ, notInEntry)
 				continue
 			}
 			norm := strings.ToLower(val)

@@ -196,9 +196,14 @@ func ChunksStep(db *sql.DB, p provider.Provider) Step {
 			}
 		}
 		seen := map[string]bool{}
+		g := newGrounding(e)
 		for _, f := range facts {
 			text := normSpace(f.Fact)
 			if text == "" || seen[strings.ToLower(text)] {
+				continue
+			}
+			if !g.supportsFact(text) {
+				g.drop("fact chunk", notInEntry)
 				continue
 			}
 			seen[strings.ToLower(text)] = true

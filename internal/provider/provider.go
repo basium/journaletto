@@ -92,16 +92,39 @@ func fakeDetect(prompt string) string {
 	return string(b)
 }
 
+// fakeEntry splits an entity/fact prompt (instructions, blank line, title, blank line, body)
+// into the entry title and body.
+func fakeEntry(prompt string) (title, body string) {
+	_, entry, _ := strings.Cut(prompt, "\n\n")
+	title, body, _ = strings.Cut(entry, "\n\n")
+	return strings.TrimSpace(title), body
+}
+
 func (Fake) Complete(_ context.Context, prompt string) (string, error) {
 	if strings.HasPrefix(prompt, DetectPromptPrefix) {
 		return fakeDetect(prompt), nil
 	}
 	if strings.HasPrefix(prompt, FactPromptPrefix) {
-		return `["The entry was processed by the fake provider."]`, nil
+		// Grounded in the entry: the first non-heading body line.
+		_, body := fakeEntry(prompt)
+		fact := ""
+		for _, l := range strings.Split(body, "\n") {
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+				fact = l
+				break
+			}
+		}
+		b, _ := json.Marshal([]string{fact})
+		return string(b), nil
 	}
 	if strings.HasPrefix(prompt, EntityPromptPrefix) {
-		return `[{"type":"Concepts","value":"Journaling","relations":[{"to":"Fake Project","kind":"part_of"}]},` +
-			`{"type":"Projects","value":"Fake Project","relations":[]}]`, nil
+		// The entry title is always in the entry text; "Fake Project" is kept only when the entry mentions it.
+		title, _ := fakeEntry(prompt)
+		b, _ := json.Marshal([]map[string]any{
+			{"type": "Concepts", "value": title, "relations": []map[string]string{{"to": "Fake Project", "kind": "part_of"}}},
+			{"type": "Projects", "value": "Fake Project", "relations": []any{}},
+		})
+		return string(b), nil
 	}
 	r := []rune(strings.TrimSpace(prompt))
 	if len(r) > 80 {
