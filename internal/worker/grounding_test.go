@@ -51,6 +51,28 @@ func TestEntitiesNotInEntryAreDroppedAndLoggedByReasonOnly(t *testing.T) {
 	}
 }
 
+// Real models (llama3.1) wrap the array in a sentence and a code fence; that used to fail the
+// whole entities step, so no entities or relations were stored.
+func TestRelationsAreStoredWhenModelWrapsJSONInProseAndFence(t *testing.T) {
+	llm := stubLLM{complete: func(p string) string {
+		if !strings.HasPrefix(p, "Extract entities") {
+			return "\x00"
+		}
+		return "Here is the extracted entities in JSON format:\n\n```\n" +
+			`[{"type":"People","value":"Ada Lovelace","relations":[{"to":"JRN-12","to_type":"Tickets","kind":"Closed"}]},
+			 {"type":"Tickets","value":"JRN-12","relations":[{"to":"Zaphod Beeblebrox","to_type":"People","kind":"owned by"}]},
+			 {"type":"People","value":"Zaphod Beeblebrox","relations":[]}]` + "\n```\n"
+	}}
+	db, id, _ := runGrounded(t, llm)
+	if n := count(t, db, `SELECT COUNT(*) FROM entity_relations r JOIN entities f ON f.id=r.from_id
+		JOIN entities t ON t.id=r.to_id WHERE f.entry_id=? AND f.value='Ada Lovelace' AND t.value='JRN-12' AND r.kind='closed'`, id); n != 1 {
+		t.Errorf("Ada -> JRN-12 relation stored = %d, want 1", n)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM entity_relations r JOIN entities f ON f.id=r.from_id WHERE f.entry_id=?`, id); n != 1 {
+		t.Errorf("relations = %d, want 1 (relation to the ungrounded entity is dropped with its target)", n)
+	}
+}
+
 func TestFactChunksNeedSupportFromEntryText(t *testing.T) {
 	llm := stubLLM{complete: func(p string) string {
 		if !strings.HasPrefix(p, "Extract facts") {

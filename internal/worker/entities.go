@@ -49,7 +49,13 @@ func canonicalType(t string) (string, bool) {
 	return "", false
 }
 
+// stripFence returns the JSON payload of a model answer: models often add a sentence such as
+// "Here is the extracted entities:" and a code fence around the array, so the text between the
+// first '[' and the last ']' is used when present.
 func stripFence(s string) string {
+	if i, j := strings.Index(s, "["), strings.LastIndex(s, "]"); i >= 0 && j > i {
+		return strings.TrimSpace(s[i : j+1])
+	}
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
 		s = strings.TrimPrefix(s, "```")

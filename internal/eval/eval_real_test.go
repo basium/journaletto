@@ -40,6 +40,9 @@ func TestEvalRealModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, r := range results {
+		t.Logf("%s relations: %v", r.Name, r.Got.Relations)
+	}
 	_, model := p.Identity()
 	t.Logf("model %s\n%s", model, eval.Report(results))
 }
