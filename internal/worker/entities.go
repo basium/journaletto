@@ -49,20 +49,36 @@ func canonicalType(t string) (string, bool) {
 	return "", false
 }
 
-// stripFence returns the JSON payload of a model answer: models often add a sentence such as
-// "Here is the extracted entities:" and a code fence around the array, so the text between the
-// first '[' and the last ']' is used when present.
-func stripFence(s string) string {
-	if i, j := strings.Index(s, "["), strings.LastIndex(s, "]"); i >= 0 && j > i {
-		return strings.TrimSpace(s[i : j+1])
+// parseJSONArray decodes the top-level JSON array of a model answer into dst (a pointer to a
+// slice). Models often add a sentence ("Here is the extracted entities:") and a code fence around
+// the array, so every '[' or '{' is tried as the start of a JSON value, in order. Spans that are
+// not valid JSON (brackets in prose) or do not fit dst (for example "[1]") are skipped. The first
+// valid object is an error: an object wrapping an array is the wrong shape, and its inner array
+// must not be returned as if it were the answer.
+func parseJSONArray(out string, dst any) error {
+	var lastErr error
+	for i := 0; i < len(out); i++ {
+		if out[i] != '[' && out[i] != '{' {
+			continue
+		}
+		var v json.RawMessage
+		if err := json.NewDecoder(strings.NewReader(out[i:])).Decode(&v); err != nil {
+			lastErr = err
+			continue
+		}
+		if out[i] == '{' {
+			return fmt.Errorf("model answered with a JSON object, want an array")
+		}
+		if err := json.Unmarshal(v, dst); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
 	}
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimPrefix(s, "json")
-		s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no JSON array in model answer")
 	}
-	return strings.TrimSpace(s)
+	return lastErr
 }
 
 // EntitiesStep extracts entities and relations from an entry and stores them, replacing any
@@ -75,7 +91,7 @@ func EntitiesStep(db *sql.DB, p provider.Provider) Step {
 			return err
 		}
 		var raw []rawEntity
-		if err := json.Unmarshal([]byte(stripFence(out)), &raw); err != nil {
+		if err := parseJSONArray(out, &raw); err != nil {
 			return fmt.Errorf("entities: invalid JSON: %w", err)
 		}
 		name, model := p.Identity()
