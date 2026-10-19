@@ -40,6 +40,9 @@ func TestSampleSetLoadsAndRunsWithFakeProvider(t *testing.T) {
 			}
 		}
 	}
+	if rep := eval.Report(results); !strings.Contains(rep, "samples expecting relations: 3/") || !strings.Contains(rep, "n/a") {
+		t.Errorf("report must count samples expecting relations and show n/a for the rest:\n%s", rep)
+	}
 	if !strings.Contains(eval.Report(results), "MEAN") {
 		t.Error("report lacks mean row")
 	}

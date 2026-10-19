@@ -140,7 +140,7 @@ func ChunksStep(db *sql.DB, p provider.Provider) Step {
 			return err
 		}
 		var facts []rawFact
-		if err := json.Unmarshal([]byte(stripFence(out)), &facts); err != nil {
+		if err := parseJSONArray(out, &facts); err != nil {
 			return fmt.Errorf("chunks: invalid JSON: %w", err)
 		}
 		name, model := p.Identity()

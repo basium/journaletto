@@ -30,6 +30,8 @@ type Sample struct {
 	Body     string
 	Entities []string // expected entity values
 	Rules    []string // ids of rules expected to fire
+	// Relations are expected entity links written "from > to" (entity values; kind is not compared).
+	Relations []string
 }
 
 // Score is precision and recall of a set of results against the expected set.
@@ -40,7 +42,12 @@ type Result struct {
 	Name     string
 	Entities Score
 	Rules    Score
-	Got      struct{ Entities, Rules []string }
+	// Relations scores stored entity relations ("from > to"); only meaningful when HasRelations.
+	Relations Score
+	// HasRelations is true when the sample expects at least one relation; other samples are
+	// shown as n/a and left out of the relation mean.
+	HasRelations bool
+	Got          struct{ Entities, Rules, Relations []string }
 
 	// SummaryClean is true when the stored summary is non-empty and has no leading LLM preamble.
 	SummaryClean bool
@@ -93,9 +100,10 @@ func Load(dir string) ([]Sample, error) {
 			return nil, err
 		}
 		var exp struct {
-			Title    string   `json:"title"`
-			Entities []string `json:"entities"`
-			Rules    []string `json:"rules"`
+			Title     string   `json:"title"`
+			Entities  []string `json:"entities"`
+			Rules     []string `json:"rules"`
+			Relations []string `json:"relations"`
 		}
 		if err := json.Unmarshal(raw, &exp); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
@@ -105,7 +113,7 @@ func Load(dir string) ([]Sample, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Sample{Name: name, Title: exp.Title, Body: string(body), Entities: exp.Entities, Rules: exp.Rules})
+		out = append(out, Sample{Name: name, Title: exp.Title, Body: string(body), Entities: exp.Entities, Rules: exp.Rules, Relations: exp.Relations})
 	}
 	return out, nil
 }
@@ -149,6 +157,11 @@ func Run(ctx context.Context, p provider.Provider, samples []Sample) ([]Result, 
 			return nil, err
 		}
 		r.SummaryClean = len(sum) == 1 && sum[0] != "" && worker.StripPreamble(sum[0]) == sum[0]
+		if r.Got.Relations, err = column(ctx, db, `SELECT f.value || ' > ' || t.value FROM entity_relations r
+			JOIN entities f ON f.id=r.from_id JOIN entities t ON t.id=r.to_id WHERE f.entry_id=?`, saved.ID); err != nil {
+			return nil, err
+		}
+		r.Relations, r.HasRelations = Measure(s.Relations, r.Got.Relations), len(set(s.Relations)) > 0
 		r.Entities, r.Rules = Measure(s.Entities, r.Got.Entities), Measure(s.Rules, r.Got.Rules)
 		results = append(results, r)
 	}
@@ -175,12 +188,20 @@ func column(ctx context.Context, db *sql.DB, q string, args ...any) ([]string, e
 // Report formats per-entry precision/recall plus the mean over all entries.
 func Report(results []Result) string {
 	var b strings.Builder
-	var ep, er, rp, rr float64
-	fmt.Fprintf(&b, "%-28s %9s %9s   %9s %9s\n", "entry", "ent.prec", "ent.rec", "rule.prec", "rule.rec")
+	var ep, er, rp, rr, lp, lr float64
+	withRel := 0
+	fmt.Fprintf(&b, "%-28s %9s %9s   %9s %9s   %9s %9s\n", "entry", "ent.prec", "ent.rec", "rule.prec", "rule.rec", "rel.prec", "rel.rec")
 	for _, r := range results {
-		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f\n", r.Name, r.Entities.Precision, r.Entities.Recall, r.Rules.Precision, r.Rules.Recall)
+		rel := fmt.Sprintf("%9s %9s", "n/a", "n/a")
+		if r.HasRelations {
+			rel = fmt.Sprintf("%9.2f %9.2f", r.Relations.Precision, r.Relations.Recall)
+			lp, lr = lp+r.Relations.Precision, lr+r.Relations.Recall
+			withRel++
+		}
+		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f   %s\n", r.Name, r.Entities.Precision, r.Entities.Recall, r.Rules.Precision, r.Rules.Recall, rel)
 		ep, er, rp, rr = ep+r.Entities.Precision, er+r.Entities.Recall, rp+r.Rules.Precision, rr+r.Rules.Recall
 	}
+	fmt.Fprintf(&b, "samples expecting relations: %d/%d (relation mean covers only these)\n", withRel, len(results))
 	clean := 0
 	for _, r := range results {
 		if r.SummaryClean {
@@ -189,7 +210,11 @@ func Report(results []Result) string {
 	}
 	fmt.Fprintf(&b, "summaries without preamble: %d/%d\n", clean, len(results))
 	if n := float64(len(results)); n > 0 {
-		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f\n", "MEAN", ep/n, er/n, rp/n, rr/n)
+		relMean := fmt.Sprintf("%9s %9s", "n/a", "n/a")
+		if withRel > 0 {
+			relMean = fmt.Sprintf("%9.2f %9.2f", lp/float64(withRel), lr/float64(withRel))
+		}
+		fmt.Fprintf(&b, "%-28s %9.2f %9.2f   %9.2f %9.2f   %s\n", "MEAN", ep/n, er/n, rp/n, rr/n, relMean)
 	}
 	return b.String()
 }

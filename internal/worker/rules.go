@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -72,7 +71,7 @@ func RulesStep(db *sql.DB, p provider.Provider) Step {
 				return err
 			}
 			var raw []rawOccurrence
-			if err := json.Unmarshal([]byte(stripFence(out)), &raw); err != nil {
+			if err := parseJSONArray(out, &raw); err != nil {
 				return fmt.Errorf("rules: rule %s: invalid JSON: %w", r.ID, err)
 			}
 			best := map[string]rawOccurrence{}

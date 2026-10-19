@@ -1,1 +1,1 @@
-{"title": "Monday standup", "entities": ["Ada Lovelace", "JRN-12", "45"], "rules": ["closed-ticket", "merged-pr"]}
+{"title": "Monday standup", "entities": ["Ada Lovelace", "JRN-12", "45"], "rules": ["closed-ticket", "merged-pr"], "relations": ["Ada Lovelace > JRN-12"]}
