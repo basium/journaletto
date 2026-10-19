@@ -11,6 +11,17 @@ npm run pipeline-check   # production image → HEALTHCHECK → smoke tests (nee
 docker compose up    # full local stack, once compose.yml exists
 ```
 
+## Local LLM with Ollama (optional)
+Default `docker compose up` runs the app with `PROVIDER=fake` and no Ollama. To use the local provider:
+```bash
+PROVIDER=local docker compose --profile local-llm up --build           # CPU
+PROVIDER=local docker compose -f compose.yml -f compose.gpu.yml --profile local-llm up --build   # NVIDIA GPU
+```
+- The `local-llm` profile starts `ollama` (models in the `ollama-models` volume) and a one-shot `ollama-pull` that downloads `OLLAMA_LLM_MODEL` (default `llama3.1`) and `OLLAMA_EMBED_MODEL` (default `nomic-embed-text`). The app starts once Ollama is healthy and the pull has finished. Compose wires `OLLAMA_ENDPOINT=http://ollama:11434` to the app.
+- First start downloads several GB (llama3.1 is about 4.7 GB); expect minutes, depending on bandwidth. Later starts reuse the volume.
+- CPU works but is slow for the LLM. `compose.gpu.yml` reserves all NVIDIA GPUs (needs the NVIDIA driver and nvidia-container-toolkit on the host).
+- Without Docker for Ollama: install Ollama on the host (`ollama pull llama3.1 && ollama pull nomic-embed-text`) and run the app with `PROVIDER=local` (endpoint defaults to `http://localhost:11434`). If the app itself runs in a container, set `OLLAMA_ENDPOINT=http://host.docker.internal:11434` (on Linux add `extra_hosts: ["host.docker.internal:host-gateway"]`) and do not use the profile.
+
 ## Operators
 Read **[GUIDE.md](GUIDE.md)** — what you write, when you approve, how to unblock, every command.
 
