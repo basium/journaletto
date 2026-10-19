@@ -88,6 +88,26 @@ func TestDateDefaultsClientSideOnlyWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestFailedSaveKeepsChosenDate(t *testing.T) {
+	h, _, _ := setup(t)
+	form := url.Values{"journal_date": {"2026-02-03"}, "description": {"d"}}
+	req := httptest.NewRequest(http.MethodPost, "/entries", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), `name="journal_date" value="2026-02-03"`) {
+		t.Fatalf("re-rendered form should keep chosen date: %d\n%s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/entries", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 || strings.Contains(rec.Body.String(), "<form") {
+		t.Fatalf("htmx failure should return only the error fragment (form and date untouched): %d\n%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSaveEntryWritesMarkdownAndCanonicalRows(t *testing.T) {
 	h, cfg, scalar := setup(t)
 	rec := post(h, "application/json", `{"title":"Day one","journal_date":"2026-03-04","description":"Hello **world**","tags":["Work","work"," Home "],"timezone":"Europe/Rome"}`)
