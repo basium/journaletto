@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,10 +14,10 @@ import (
 
 // Prompt versions are recorded with each generated artefact; bump when the text changes.
 const (
-	SummaryPromptVersion = "summary-v1"
+	SummaryPromptVersion = "summary-v2"
 	TagsPromptVersion    = "tags-v1"
 
-	summaryPrompt = "Summarise this journal entry in one or two short sentences.\n\n"
+	summaryPrompt = "Summarise this journal entry in one or two short sentences. Reply with the summary text only: no preamble, no introduction such as \"Here is a summary\", no quotes, no commentary.\n\n"
 	tagsPrompt    = "List up to 8 short lowercase topic tags for this journal entry, comma separated, nothing else.\n\n"
 )
 
@@ -55,7 +56,7 @@ func SummaryTagsStep(db *sql.DB, p provider.Provider) Step {
 		if err != nil {
 			return err
 		}
-		summary = strings.TrimSpace(summary)
+		summary = StripPreamble(summary)
 		if summary == "" {
 			return errors.New("empty summary from provider")
 		}
@@ -88,6 +89,24 @@ func SummaryTagsStep(db *sql.DB, p provider.Provider) Step {
 		}
 		return tx.Commit()
 	}}
+}
+
+// preambleRe matches chatter an LLM puts before the real answer, e.g. "Here is a summary:".
+var preambleRe = regexp.MustCompile(`(?i)^(sure|certainly|of course|okay|ok|here is|here's|here are|below is|this is a summary|summary:)`)
+
+// StripPreamble trims the text and removes a leading preamble line such as "Here is a summary of
+// the entry:" when real content follows. A lone line is kept: with nothing after it, it is more
+// likely the summary itself than chatter.
+func StripPreamble(s string) string {
+	s = strings.TrimSpace(s)
+	first, rest, ok := strings.Cut(s, "\n")
+	if !ok || !preambleRe.MatchString(strings.TrimSpace(first)) {
+		return s
+	}
+	if rest = strings.TrimSpace(rest); rest == "" {
+		return s
+	}
+	return rest
 }
 
 func parseTags(raw string) []string {
