@@ -16,7 +16,7 @@ type OllamaConfig struct {
 	Endpoint    string        // base URL, e.g. http://localhost:11434
 	LLMModel    string        // generation model
 	EmbedModel  string        // embedding model
-	Timeout     time.Duration // per request; 0 means 120s
+	Timeout     time.Duration // per request; 0 means 600s
 	NumCtx      int           // context window (num_ctx); 0 leaves the model default
 	Temperature float64       // sampling temperature
 }
@@ -30,7 +30,7 @@ type Ollama struct {
 // NewOllama returns an adapter for cfg.
 func NewOllama(cfg OllamaConfig) *Ollama {
 	if cfg.Timeout <= 0 {
-		cfg.Timeout = 120 * time.Second
+		cfg.Timeout = 600 * time.Second
 	}
 	cfg.Endpoint = strings.TrimRight(cfg.Endpoint, "/")
 	return &Ollama{cfg: cfg, client: &http.Client{Timeout: cfg.Timeout}}
