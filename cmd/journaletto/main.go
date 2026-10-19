@@ -49,8 +49,13 @@ func main() {
 	}
 	defer db.Close()
 
-	prov, err := provider.New(cfg.Provider)
-	if err != nil {
+	var prov provider.Provider
+	if cfg.Provider == "local" {
+		prov = provider.NewOllama(provider.OllamaConfig{
+			Endpoint: cfg.OllamaEndpoint, LLMModel: cfg.OllamaLLMModel, EmbedModel: cfg.OllamaEmbedModel,
+			Timeout: time.Duration(cfg.OllamaTimeoutSeconds) * time.Second, NumCtx: cfg.OllamaNumCtx, Temperature: cfg.OllamaTemperature,
+		})
+	} else if prov, err = provider.New(cfg.Provider); err != nil {
 		log.Fatalf("provider: %v", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

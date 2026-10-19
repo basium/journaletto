@@ -31,6 +31,32 @@ type page struct {
 	TagsText string
 	Error    *entries.ValidationError
 	Saved    *entries.Entry
+	ID       string // set on the edit page
+	Full     string // full-page template for non-HTMX results; default home.html
+	Updated  bool
+}
+
+// readInput parses a create/update submission (JSON or form). On failure it writes the
+// response itself and returns ok=false.
+func readInput(w http.ResponseWriter, r *http.Request, render func(http.ResponseWriter, string, page), full string) (in entries.Input, asJSON, ok bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "application/json" {
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, entries.ValidationError{Field: "body", Message: "invalid JSON or too large"})
+			return in, true, false
+		}
+		return in, true, true
+	}
+	if err := r.ParseForm(); err != nil {
+		p := page{Full: full, ID: r.PathValue("id"), Error: &entries.ValidationError{Field: "body", Message: "invalid or too large form"}}
+		renderResult(w, r, render, p, http.StatusBadRequest)
+		return in, false, false
+	}
+	return entries.Input{
+		Title: r.PostFormValue("title"), JournalDate: r.PostFormValue("journal_date"),
+		Description: r.PostFormValue("description"), Timezone: r.PostFormValue("timezone"),
+		Tags: strings.Split(r.PostFormValue("tags"), ","),
+	}, false, true
 }
 
 // New returns the application handler.
@@ -75,25 +101,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		}
 	})
 	mux.HandleFunc("POST /entries", func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
-		var in entries.Input
-		asJSON := false
-		if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "application/json" {
-			asJSON = true
-			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-				writeJSON(w, http.StatusBadRequest, entries.ValidationError{Field: "body", Message: "invalid JSON or too large"})
-				return
-			}
-		} else {
-			if err := r.ParseForm(); err != nil {
-				renderResult(w, r, render, page{Error: &entries.ValidationError{Field: "body", Message: "invalid or too large form"}}, http.StatusBadRequest)
-				return
-			}
-			in = entries.Input{
-				Title: r.PostFormValue("title"), JournalDate: r.PostFormValue("journal_date"),
-				Description: r.PostFormValue("description"), Timezone: r.PostFormValue("timezone"),
-				Tags: strings.Split(r.PostFormValue("tags"), ","),
-			}
+		in, asJSON, ok := readInput(w, r, render, "home.html")
+		if !ok {
+			return
 		}
 		saved, err := svc.Save(r.Context(), in)
 		var ve *entries.ValidationError
@@ -141,18 +151,70 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		}
 	}
 	mux.HandleFunc("GET /entries/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if _, err := worker.Status(r.Context(), db, cfg.DevUserID, id); err != nil {
-			if errors.Is(err, worker.ErrNotFound) {
-				http.NotFound(w, r)
-				return
-			}
+		v, err := svc.Get(r.Context(), r.PathValue("id"))
+		if errors.Is(err, entries.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			log.Printf("view: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		if strings.Contains(r.Header.Get("Accept"), "application/json") {
+			writeJSON(w, http.StatusOK, v)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := tpl.ExecuteTemplate(w, "entry.html", map[string]string{"ID": id}); err != nil {
+		if err := tpl.ExecuteTemplate(w, "entry.html", v); err != nil {
 			log.Printf("render: %v", err)
+		}
+	})
+	mux.HandleFunc("GET /entries/{id}/edit", func(w http.ResponseWriter, r *http.Request) {
+		v, err := svc.Get(r.Context(), r.PathValue("id"))
+		if errors.Is(err, entries.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			log.Printf("edit: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		render(w, "edit.html", page{ID: v.ID, Full: "edit.html", TagsText: strings.Join(v.Tags, ", "),
+			Form: entries.Input{Title: v.Title, JournalDate: v.JournalDate, Description: v.Body, Timezone: v.Timezone}})
+	})
+	mux.HandleFunc("POST /entries/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		in, asJSON, ok := readInput(w, r, render, "edit.html")
+		if !ok {
+			return
+		}
+		saved, err := svc.Update(r.Context(), id, in)
+		var ve *entries.ValidationError
+		hx := r.Header.Get("HX-Request") == "true"
+		switch {
+		case errors.Is(err, entries.ErrNotFound):
+			http.NotFound(w, r)
+		case errors.As(err, &ve):
+			if asJSON {
+				writeJSON(w, http.StatusBadRequest, ve)
+				return
+			}
+			renderResult(w, r, render, page{ID: id, Full: "edit.html", Form: in, TagsText: strings.Join(in.Tags, ", "), Error: ve}, http.StatusBadRequest)
+		case err != nil:
+			log.Printf("update: %v", err)
+			if asJSON {
+				writeJSON(w, http.StatusInternalServerError, entries.ValidationError{Message: "could not save entry"})
+				return
+			}
+			renderResult(w, r, render, page{ID: id, Full: "edit.html", Form: in, TagsText: strings.Join(in.Tags, ", "), Error: &entries.ValidationError{Field: "server", Message: "could not save entry"}}, http.StatusInternalServerError)
+		case asJSON:
+			writeJSON(w, http.StatusOK, saved)
+		case hx:
+			renderResult(w, r, render, page{ID: id, Saved: &saved, Updated: true}, http.StatusOK)
+		default:
+			http.Redirect(w, r, "/entries/"+id, http.StatusSeeOther)
 		}
 	})
 	mux.HandleFunc("GET /entries/{id}/status", func(w http.ResponseWriter, r *http.Request) { status(w, r, http.StatusOK) })
@@ -175,6 +237,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 // renderResult sends the fragment to HTMX requests and the full page otherwise.
 func renderResult(w http.ResponseWriter, r *http.Request, render func(http.ResponseWriter, string, page), p page, code int) {
 	name := "home.html"
+	if p.Full != "" {
+		name = p.Full
+	}
 	if r.Header.Get("HX-Request") == "true" {
 		name = "result"
 	}

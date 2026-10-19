@@ -92,9 +92,10 @@ func (w *Worker) runOne(ctx context.Context) (ok bool, err error) {
 	var jobID int64
 	var e Entry
 	var attempts int
-	err = w.DB.QueryRowContext(ctx, `UPDATE jobs SET state='running', attempts=attempts+1
+	var claim int64
+	err = w.DB.QueryRowContext(ctx, `UPDATE jobs SET state='running', attempts=attempts+1, claim=claim+1
 		WHERE id=(SELECT id FROM jobs WHERE state='queued' AND run_after<=? ORDER BY id LIMIT 1)
-		RETURNING id, entry_id, attempts`, w.now().UnixMilli()).Scan(&jobID, &e.ID, &attempts)
+		RETURNING id, entry_id, attempts, claim`, w.now().UnixMilli()).Scan(&jobID, &e.ID, &attempts, &claim)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -117,17 +118,17 @@ func (w *Worker) runOne(ctx context.Context) (ok bool, err error) {
 	bg := context.WithoutCancel(ctx)
 	switch {
 	case runErr == nil:
-		return true, w.finish(bg, jobID, e.ID, "done", "ready", "", 0)
+		return true, w.finish(bg, jobID, claim, e.ID, "done", "ready", "", 0)
 	case attempts > w.MaxRetries:
 		log.Printf("worker: entry %s failed after %d attempts: %v", e.ID, attempts, runErr)
-		return true, w.finish(bg, jobID, e.ID, "failed", "failed", runErr.Error(), 0)
+		return true, w.finish(bg, jobID, claim, e.ID, "failed", "failed", runErr.Error(), 0)
 	default:
 		base := w.Backoff
 		if base <= 0 {
 			base = time.Second
 		}
 		delay := base << (attempts - 1) // base, 2*base, 4*base ...
-		return true, w.finish(bg, jobID, e.ID, "queued", "pending", runErr.Error(), w.now().Add(delay).UnixMilli())
+		return true, w.finish(bg, jobID, claim, e.ID, "queued", "pending", runErr.Error(), w.now().Add(delay).UnixMilli())
 	}
 }
 
@@ -145,11 +146,17 @@ func (w *Worker) process(ctx context.Context, e Entry) (err error) {
 	return nil
 }
 
-func (w *Worker) finish(ctx context.Context, jobID int64, entryID, jobState, entryStatus, lastErr string, runAfter int64) error {
-	if _, err := w.DB.ExecContext(ctx, `UPDATE jobs SET state=?, last_error=?, run_after=? WHERE id=?`, jobState, lastErr, runAfter, jobID); err != nil {
+// finish records a run's outcome only if the job is still held by that exact claim; a requeue
+// (edit) followed by a re-claim bumps the claim, so a stale run cannot overwrite the newer one.
+func (w *Worker) finish(ctx context.Context, jobID, claim int64, entryID, jobState, entryStatus, lastErr string, runAfter int64) error {
+	res, err := w.DB.ExecContext(ctx, `UPDATE jobs SET state=?, last_error=?, run_after=? WHERE id=? AND state='running' AND claim=?`, jobState, lastErr, runAfter, jobID, claim)
+	if err != nil {
 		return err
 	}
-	_, err := w.DB.ExecContext(ctx, `UPDATE entries SET processing_status=? WHERE id=?`, entryStatus, entryID)
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil // the entry was edited and the job requeued meanwhile; the rerun reports the outcome
+	}
+	_, err = w.DB.ExecContext(ctx, `UPDATE entries SET processing_status=? WHERE id=?`, entryStatus, entryID)
 	return err
 }
 

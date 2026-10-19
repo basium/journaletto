@@ -108,6 +108,43 @@ func TestFailuresRetryThreeTimesWithBackoffThenFail(t *testing.T) {
 	}
 }
 
+func TestStaleRunCannotFinishJobReclaimedAfterEdit(t *testing.T) {
+	db, svc := setup(t)
+	id := save(t, svc)
+	var calls atomic.Int32
+	started := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	release := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	step := worker.Step{Name: "gate", Run: func(context.Context, worker.Entry) error {
+		i := calls.Add(1) - 1
+		if i > 1 {
+			return nil
+		}
+		close(started[i])
+		<-release[i]
+		return nil
+	}}
+	// Two workers: the second re-claims the requeued job while the first run is still going.
+	start(t, &worker.Worker{DB: db, Steps: []worker.Step{step}, Concurrency: 2})
+	<-started[0]
+	if _, err := svc.Update(context.Background(), id, entries.Input{Title: "t", Description: "edited"}); err != nil {
+		t.Fatal(err)
+	}
+	<-started[1]
+
+	close(release[0]) // the stale run finishes first
+	time.Sleep(100 * time.Millisecond)
+	if st := status(t, db, id); st != "processing" {
+		t.Fatalf("stale run wrote its outcome: status %q, want processing", st)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT state FROM jobs WHERE entry_id=?`, id).Scan(&state); err != nil || state != "running" {
+		t.Fatalf("job state %q err %v, want running", state, err)
+	}
+
+	close(release[1])
+	waitStatus(t, db, id, "ready")
+}
+
 func TestSweepAndResyncRequeueFailedAndPendingWhenProviderWasDown(t *testing.T) {
 	db, svc := setup(t)
 	failed, pending, stuck := save(t, svc), save(t, svc), save(t, svc)

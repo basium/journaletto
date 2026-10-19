@@ -21,6 +21,23 @@ Decision record: `docs/decisions/0001-slice1-entry-save.md`.
 
 JE-006 (canonical SQLite/JSON representation), JE-007 (LLM enrichment), JE-008 (entity organisation), JE-009 (viewing), JE-010 (editing/versioning), JE-011 (soft delete), IDX-001..004, RET-*, SRCH-*, DET-*.
 
+## Milestone 1 — current implementation (`internal/entries`, `internal/worker`, `internal/provider`, `internal/server`)
+
+The milestone gate is `internal/worker/integration_test.go`: `TestMilestone1EndToEndEntryToReady` (fake provider; raw file, front matter, canonical row, entry and chunk FTS, section and fact chunks, entities, embeddings, provenance, rule occurrences). All rows asserted there are produced by the pipeline, not fixtures. The Ollama adapter is tested against a stub HTTP server only (`internal/provider/ollama_test.go`).
+
+| Requirement | Test(s) | Status |
+|---|---|---|
+| JE-001..005 (form, raw Markdown, location, front matter, restrictions) | `internal/entries/entries_test.go`: `TestSaveValidationLimits`, `TestSaveDedupesAndLowercasesTags`, `TestSaveWritesExactlyOneRowAndFile`; `internal/server/server_test.go`: `TestHomeServesFormWithVendoredHTMX`, `TestSaveEntryWritesMarkdownAndCanonicalRows`, `TestInvalidInputRejected`; gate: `TestMilestone1EndToEndEntryToReady` | Complete |
+| JE-006 (canonical indexed representation) | `TestSaveEntryWritesMarkdownAndCanonicalRows`; gate test | Complete |
+| JE-007 (summary, internal tags, provenance) | `internal/worker/worker_test.go`: `TestProcessingStoresSummaryAndInternalTagsWithProvenanceNotInRawFile`, `TestBlankSummaryFailsTheStepInsteadOfReady` | Complete |
+| JE-008 (entities and relations) | `internal/worker/worker_test.go`: `TestEntitiesNormalisedDedupedRejectUnknownAndIdempotentOnReprocess`; gate test | Complete |
+| JE-009, JE-010 (view, edit, single previous version, requeue) | `internal/server/server_test.go`: `TestViewShowsSectionsAndEditRedirectsToUpdatedEntry`; `internal/entries/edit_test.go`: `TestEditKeepsIdentityKeepsOneVersionAndReprocessesWithoutDuplicates`, `TestEditValidatesLikeCreateAndLeavesEntryUntouched` | Complete |
+| JE-012 (AI-independent save, retry, resync) | `internal/entries/entries_test.go`: `TestSaveLeavesNoOrphanFileWhenDBFails`, `TestSaveRenameFailureLeavesNoRowAndNoFile`, `TestSaveCommitFailureRemovesPublishedFile`; `internal/worker/worker_test.go`: `TestFakeProviderEntryReachesReady`, `TestFailuresRetryThreeTimesWithBackoffThenFail`, `TestSweepAndResyncRequeueFailedAndPendingWhenProviderWasDown`, `TestSweepFailureDoesNotStopWorkers`, `TestSaveSucceedsWhenProviderIsDown`; `TestStatusFragmentPollsUntilTerminalAndResyncRequeues` | Complete |
+| IDX-001, IDX-002 (indexed representations, semantic chunks) | `internal/worker/chunks_test.go`: `TestSectionChunksFollowHeadingsWithParentContextAndExactTextIndex`, `TestFactChunksFromProviderWithProvenanceAndReplacedOnReprocess`, `TestChunksLinkOnlyEntitiesTheyMention`; `internal/worker/embeddings_test.go`: `TestEveryChunkEmbeddedWithProvenanceAndNearestNeighbourFindsExpectedChunk`, `TestReprocessingReplacesEmbeddingsWithoutDuplicates`; gate test | Complete |
+| IDX-004 (model deployment and provenance) | `internal/provider/ollama_test.go`: `TestOllamaCompleteSendsModelPromptAndOptions`, `TestOllamaEmbedReturnsVector`, `TestOllamaErrorsAreReportedAndTimeoutApplies`; `internal/config/config_test.go`; provenance asserted in gate test | Complete (endpoint, models, timeout, context, params configurable) |
+| DET-001..003 (rules, occurrences, evaluation) | `internal/worker/rules_test.go`: `TestMigrationSeedsDetectionRules`, `TestMatchingEntryGetsOccurrencesWithExcerptConfidenceAndProvenance`, `TestNonMatchingEntryHasNoOccurrences`, `TestOccurrencesBelowMinimumConfidenceAreIgnored`, `TestReprocessingNeverDoubleCountsAndDistinctEventsAreSeparate`, `TestRuleVersionChangeRequeuesActiveEntriesAndReplacesOccurrences`, `TestDisabledRuleIsNotEvaluated`; gate test | Complete |
+| DATA-001, DATA-002 | gate test (raw file is untouched by processing and holds no generated data); `TestProcessingStoresSummaryAndInternalTagsWithProvenanceNotInRawFile` | Complete |
+
 ## Test run log
 
 - `go build ./...` — clean.

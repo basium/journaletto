@@ -1,4 +1,4 @@
-{{define "result"}}{{if .Error}}<p class="error" role="alert" data-field="{{.Error.Field}}">{{.Error.Field}}: {{.Error.Message}}</p>{{else if .Saved}}<p class="success">Entry saved (<a href="/entries/{{.Saved.ID}}">{{.Saved.ID}}</a>), processing: {{.Saved.Status}}</p>{{end}}{{end}}<!doctype html>
+{{define "result"}}{{if .Error}}<p class="error" role="alert" data-field="{{.Error.Field}}">{{.Error.Field}}: {{.Error.Message}}</p>{{else if .Saved}}<p class="success">Entry {{if .Updated}}updated{{else}}saved{{end}} (<a href="/entries/{{.Saved.ID}}">{{.Saved.ID}}</a>), processing: {{.Saved.Status}}</p>{{end}}{{end}}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">

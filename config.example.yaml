@@ -11,3 +11,10 @@ max_retries: 3
 worker_concurrency: 1
 # Max size of one journal entry in bytes
 max_entry_bytes: 102400
+# Ollama adapter, used when provider: local (env: OLLAMA_ENDPOINT, OLLAMA_LLM_MODEL, ...)
+ollama_endpoint: http://localhost:11434
+ollama_llm_model: llama3.1
+ollama_embed_model: nomic-embed-text
+ollama_timeout_seconds: 120
+ollama_num_ctx: 8192
+ollama_temperature: 0
