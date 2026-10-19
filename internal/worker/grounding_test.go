@@ -157,7 +157,37 @@ func TestOnlyGroundedEntityIsStoredEndToEnd(t *testing.T) {
 	}
 }
 
-const factBody = "# Release\nAda Lovelace reviewed ticket JE-42 on 2026-10-19 and measured 3.5 hours of work on the parser."
+func TestPronounsAreNotStoredAsPeopleAndLoggedByReasonOnly(t *testing.T) {
+	var prompt string
+	llm := stubLLM{complete: func(p string) string {
+		if !strings.HasPrefix(p, "Extract entities") {
+			return "\x00"
+		}
+		prompt = p
+		return `[{"type":"People","value":"I","relations":[]},
+			{"type":"People","value":"We","relations":[]},
+			{"type":"People","value":"Ada","relations":[{"to":"I","to_type":"People","kind":"told"}]},
+			{"type":"Tickets","value":"JRN-12","relations":[]}]`
+	}}
+	db, id, logs := runGroundedBody(t, "I told Ada that we closed ticket JRN-12.", llm)
+	if n := count(t, db, `SELECT COUNT(*) FROM entities WHERE entry_id=?`, id); n != 2 {
+		t.Errorf("entities = %d, want 2 (Ada, JRN-12)", n)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM entities WHERE type='People' AND norm_value IN ('i','we')`); n != 0 {
+		t.Error("pronoun stored as a person")
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM entity_relations`); n != 0 {
+		t.Errorf("relation to a dropped pronoun kept: %d", n)
+	}
+	if !strings.Contains(logs, "reason=pronoun") || strings.Contains(logs, `"I"`) {
+		t.Errorf("drop must be logged by reason without content: %q", logs)
+	}
+	if !strings.Contains(prompt, "pronouns") {
+		t.Error("prompt must exclude pronouns")
+	}
+}
+
+const factBody ="# Release\nAda Lovelace reviewed ticket JE-42 on 2026-10-19 and measured 3.5 hours of work on the parser."
 
 func TestFactSupportKeepsParaphrasesAndKeepsNumbersWhole(t *testing.T) {
 	facts := []struct {

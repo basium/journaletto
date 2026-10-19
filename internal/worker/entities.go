@@ -13,7 +13,7 @@ import (
 )
 
 // EntitiesPromptVersion is recorded with each extracted entity; bump when the prompt changes.
-const EntitiesPromptVersion = "entities-v1"
+const EntitiesPromptVersion = "entities-v2"
 
 // EntityTypes are the 16 supported entity types (JE-008).
 var EntityTypes = []string{
@@ -24,6 +24,7 @@ var EntityTypes = []string{
 var entitiesPrompt = provider.EntityPromptPrefix + ` from this journal entry. Answer with only a JSON array of
 {"type":T,"value":V,"relations":[{"to":V2,"to_type":T2,"kind":K}]} where T is one of: ` + strings.Join(EntityTypes, ", ") +
 	`; relations point to the value and type of another entity in the same array and K is a short lowercase verb phrase.
+People are named individuals only: never extract pronouns such as I, me, my, we, you, he, she, they.
 
 `
 
@@ -36,6 +37,16 @@ type rawEntity struct {
 		Kind   string `json:"kind"`
 	} `json:"relations"`
 }
+
+// pronouns are never People: the writer and others referred to without a name.
+var pronouns = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(`i me my mine myself we us our ours ourselves you your yours yourself he him his himself
+		she her hers herself they them their theirs themselves it its itself`) {
+		m[w] = true
+	}
+	return m
+}()
 
 func normSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
@@ -98,6 +109,10 @@ func EntitiesStep(db *sql.DB, p provider.Provider) Step {
 			val := normSpace(r.Value)
 			if !ok || val == "" {
 				log.Printf("entities: entry %s: dropped invalid entity (type=%q, reason=unknown type or blank value)", e.ID, r.Type)
+				continue
+			}
+			if typ == "People" && pronouns[strings.ToLower(val)] {
+				g.drop("entity type="+typ, "pronoun")
 				continue
 			}
 			if !g.contains(val) {
