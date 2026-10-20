@@ -101,9 +101,9 @@ func (s *Service) Update(ctx context.Context, id string, in Input) (Entry, error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var path, createdAt, oldDate, oldTZ, status string
-	err := s.DB.QueryRowContext(ctx, `SELECT file_path,created_at,journal_date,timezone,status FROM entries WHERE id=? AND user_id=?`, id, s.UserID).
-		Scan(&path, &createdAt, &oldDate, &oldTZ, &status)
+	var path, createdAt, oldDate, oldTZ, status, oldUpdated string
+	err := s.DB.QueryRowContext(ctx, `SELECT file_path,created_at,journal_date,timezone,status,updated_at FROM entries WHERE id=? AND user_id=?`, id, s.UserID).
+		Scan(&path, &createdAt, &oldDate, &oldTZ, &status, &oldUpdated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, ErrNotFound
 	}
@@ -123,6 +123,10 @@ func (s *Service) Update(ctx context.Context, id string, in Input) (Entry, error
 	in, err = normalize(in, t, maxBody)
 	if err != nil {
 		return Entry{}, err
+	}
+	// updated_at must strictly advance even when edits land within the same second.
+	if prev, perr := time.Parse(time.RFC3339, oldUpdated); perr == nil && !t.Truncate(time.Second).After(prev) {
+		t = prev.Add(time.Second)
 	}
 	ts := t.Format(time.RFC3339)
 	fm, err := yaml.Marshal(frontMatter{1, id, in.Title, in.JournalDate, createdAt, ts, in.Timezone, in.Tags, "active", ""})
