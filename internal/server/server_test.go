@@ -108,6 +108,32 @@ func TestFailedSaveKeepsChosenDate(t *testing.T) {
 	}
 }
 
+func TestImageEmbedReturns400OnCreateAndEdit(t *testing.T) {
+	h, _, scalar := setup(t)
+	rec := post(h, "application/json", `{"title":"T","description":"![a](http://x/a.png)"}`)
+	var ve struct{ Field, Message string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &ve); err != nil || rec.Code != 400 || ve.Field != "description" || ve.Message == "" {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if scalar(`SELECT COUNT(*) FROM entries`) != "0" {
+		t.Fatal("rejected create wrote a row")
+	}
+	var out struct{ ID string }
+	if err := json.Unmarshal(post(h, "application/json", `{"title":"T","description":"[ok](http://x)"}`).Body.Bytes(), &out); err != nil || out.ID == "" {
+		t.Fatal("plain link should save")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/entries/"+out.ID, strings.NewReader(url.Values{"title": {"T"}, "description": {`<img src="a.png">`}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "images cannot be embedded") {
+		t.Fatalf("edit: %d %s", w.Code, w.Body.String())
+	}
+	if scalar(`SELECT body FROM entries WHERE id='`+out.ID+`'`) != "[ok](http://x)" {
+		t.Fatal("rejected edit changed the entry")
+	}
+}
+
 func TestSaveEntryWritesMarkdownAndCanonicalRows(t *testing.T) {
 	h, cfg, scalar := setup(t)
 	rec := post(h, "application/json", `{"title":"Day one","journal_date":"2026-03-04","description":"Hello **world**","tags":["Work","work"," Home "],"timezone":"Europe/Rome"}`)
