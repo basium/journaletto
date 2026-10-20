@@ -12,6 +12,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"journaletto/internal/config"
@@ -151,6 +152,25 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 			log.Printf("render: %v", err)
 		}
 	}
+	mux.HandleFunc("GET /entries", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		inc, _ := strconv.ParseBool(q.Get("include_deleted"))
+		pg, _ := strconv.Atoi(q.Get("page"))
+		lp, err := svc.List(r.Context(), inc, pg)
+		if err != nil {
+			log.Printf("list: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if strings.Contains(r.Header.Get("Accept"), "application/json") {
+			writeJSON(w, http.StatusOK, lp)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := tpl.ExecuteTemplate(w, "list.html", lp); err != nil {
+			log.Printf("render: %v", err)
+		}
+	})
 	mux.HandleFunc("GET /entries/{id}", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Get(r.Context(), r.PathValue("id"))
 		if errors.Is(err, entries.ErrNotFound) {

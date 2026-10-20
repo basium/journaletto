@@ -298,3 +298,50 @@ func TestDeleteAndRestoreFromEntryPage(t *testing.T) {
 		}
 	}
 }
+
+func TestEntryListHidesDeletedUnlessRequestedAndLinksRows(t *testing.T) {
+	h, _, _ := setup(t)
+	var keep, gone struct{ ID string }
+	_ = json.Unmarshal(post(h, "application/json", `{"title":"Keeper","description":"d"}`).Body.Bytes(), &keep)
+	_ = json.Unmarshal(post(h, "application/json", `{"title":"Goner","description":"d"}`).Body.Bytes(), &gone)
+	get := func(path, accept string) string {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Accept", accept)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("%s = %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/entries/"+gone.ID+"/delete", nil))
+
+	page := get("/entries", "text/html")
+	if !strings.Contains(page, "Keeper") || strings.Contains(page, "Goner") || !strings.Contains(page, `href="/entries/`+keep.ID+`"`) {
+		t.Fatalf("default list:\n%s", page)
+	}
+	page = get("/entries?include_deleted=true", "text/html")
+	if !strings.Contains(page, "Goner") || !strings.Contains(page, ">Deleted<") {
+		t.Fatalf("include_deleted list:\n%s", page)
+	}
+	var js struct {
+		Items []struct {
+			Title            string `json:"title"`
+			Status           string `json:"status"`
+			ProcessingStatus string `json:"processing_status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(get("/entries?include_deleted=true", "application/json")), &js); err != nil || len(js.Items) != 2 {
+		t.Fatalf("json = %+v err %v", js, err)
+	}
+	var statuses []string
+	for _, it := range js.Items {
+		statuses = append(statuses, it.Title+":"+it.Status+":"+it.ProcessingStatus)
+	}
+	if got := strings.Join(statuses, ","); got != "Goner:deleted:pending,Keeper:active:pending" {
+		t.Errorf("items = %s", got)
+	}
+	if !strings.Contains(get("/", "text/html"), `href="/entries"`) {
+		t.Error("home lacks nav link")
+	}
+}
