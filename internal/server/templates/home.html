@@ -8,6 +8,7 @@
 </head>
 <body>
   <h1>Journaletto</h1>
+  <nav><a href="/entries">All entries</a></nav>
   <form method="post" action="/entries" hx-post="/entries" hx-target="#result">
     <p><label>Title <input name="title" maxlength="200" required value="{{.Form.Title}}"></label></p>
     <p><label>Date <input type="date" name="journal_date" value="{{.Form.JournalDate}}"></label></p>

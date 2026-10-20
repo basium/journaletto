@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Journaletto entries</title>
+</head>
+<body>
+  <h1>Entries</h1>
+  <form method="get" action="/entries">
+    <label><input type="checkbox" name="include_deleted" value="true" {{if .IncludeDeleted}}checked{{end}} onchange="this.form.submit()"> Include deleted</label>
+    <noscript><button type="submit">Apply</button></noscript>
+  </form>
+  <table>
+    <thead><tr><th>Title</th><th>Journal date</th><th>Created</th><th>Status</th><th>Processing</th></tr></thead>
+    <tbody>
+    {{range .Items}}<tr>
+      <td><a href="/entries/{{.ID}}">{{.Title}}</a></td>
+      <td class="journal-date">{{.JournalDate}}</td>
+      <td><time class="local-time" datetime="{{.CreatedAt}}">{{.CreatedAt}}</time></td>
+      <td><span class="chip chip-{{.Status}}">{{if .Deleted}}Deleted{{else}}Active{{end}}</span></td>
+      <td>{{.ProcessingStatus}}</td>
+    </tr>{{else}}<tr><td colspan="5"><em>No entries</em></td></tr>{{end}}
+    </tbody>
+  </table>
+  <p>{{if .HasPrev}}<a href="/entries?page={{.PrevPage}}{{if .IncludeDeleted}}&amp;include_deleted=true{{end}}">Previous</a>{{end}}
+    Page {{.Page}}
+    {{if .HasNext}}<a href="/entries?page={{.NextPage}}{{if .IncludeDeleted}}&amp;include_deleted=true{{end}}">Next</a>{{end}}</p>
+  <p><a href="/">Home</a></p>
+  <script>
+    document.querySelectorAll("time.local-time").forEach(function (t) {
+      var d = new Date(t.getAttribute("datetime"));
+      if (!isNaN(d)) t.textContent = d.toLocaleString();
+    });
+  </script>
+</body>
+</html>
