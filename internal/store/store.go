@@ -157,6 +157,8 @@ var migrations = []string{
 	// claim is bumped on every claim of a job, so a run that lost its job (edit requeued it and
 	// another claim started) cannot write its outcome.
 	`ALTER TABLE jobs ADD COLUMN claim INTEGER NOT NULL DEFAULT 0;`,
+	// Soft delete: UTC RFC3339 time of deletion, empty while the entry is active.
+	`ALTER TABLE entries ADD COLUMN deleted_at TEXT NOT NULL DEFAULT '';`,
 }
 
 // Open opens (creating if needed) the database with foreign keys on and migrates it.

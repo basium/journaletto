@@ -253,3 +253,48 @@ func TestInvalidInputRejected(t *testing.T) {
 		t.Errorf("files written for invalid input")
 	}
 }
+
+func TestDeleteAndRestoreFromEntryPage(t *testing.T) {
+	h, _, scalar := setup(t)
+	var saved struct{ ID string }
+	_ = json.Unmarshal(post(h, "application/json", `{"title":"T","description":"d"}`).Body.Bytes(), &saved)
+	do := func(method, path, accept, ct, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Accept", accept)
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := do("GET", "/entries/"+saved.ID, "text/html", "", ""); strings.Contains(rec.Body.String(), "Deleted") || !strings.Contains(rec.Body.String(), "/delete") {
+		t.Fatalf("active page:\n%s", rec.Body)
+	}
+	if rec := do("POST", "/entries/"+saved.ID+"/delete", "text/html", "", ""); rec.Code != http.StatusSeeOther {
+		t.Fatalf("delete = %d", rec.Code)
+	}
+	do("POST", "/entries/"+saved.ID+"/delete", "text/html", "", "") // idempotent
+	if rec := do("GET", "/entries/"+saved.ID, "text/html", "", ""); !strings.Contains(rec.Body.String(), "Deleted") || !strings.Contains(rec.Body.String(), "/restore") {
+		t.Fatalf("deleted page:\n%s", rec.Body)
+	}
+	var v struct{ Status, DeletedAt string }
+	_ = json.Unmarshal(do("GET", "/entries/"+saved.ID, "application/json", "", "").Body.Bytes(), &v)
+	if v.Status != "deleted" || v.DeletedAt == "" {
+		t.Errorf("json = %+v", v)
+	}
+	if rec := do("POST", "/entries/"+saved.ID, "application/json", "application/json", `{"title":"X"}`); rec.Code != http.StatusConflict {
+		t.Errorf("edit deleted = %d", rec.Code)
+	}
+	if rec := do("POST", "/entries/"+saved.ID+"/restore", "application/json", "", ""); rec.Code != http.StatusOK {
+		t.Errorf("restore = %d", rec.Code)
+	}
+	if got := scalar(`SELECT status||deleted_at FROM entries`); got != "active" {
+		t.Errorf("row = %q", got)
+	}
+	for _, p := range []string{"/delete", "/restore"} {
+		if rec := do("POST", "/entries/nope"+p, "text/html", "", ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s unknown id = %d", p, rec.Code)
+		}
+	}
+}
