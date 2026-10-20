@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -59,6 +60,9 @@ type Service struct {
 	// Test seams for failure injection; nil means os.Rename / tx.Commit.
 	Rename func(oldpath, newpath string) error
 	Commit func(tx *sql.Tx) error
+
+	// mu serializes edits and delete/restore so a file rewrite never races another one.
+	mu sync.Mutex
 }
 
 // frontMatter holds only user-authored data; generated data must never be written here.
@@ -72,6 +76,7 @@ type frontMatter struct {
 	Timezone      string   `yaml:"timezone"`
 	Tags          []string `yaml:"tags"`
 	Status        string   `yaml:"status"`
+	DeletedAt     string   `yaml:"deleted_at,omitempty"` // only while status is deleted
 }
 
 func normalize(in Input, now time.Time, maxBody int) (Input, error) {
@@ -146,7 +151,7 @@ func (s *Service) Save(ctx context.Context, in Input) (Entry, error) {
 	dir := filepath.Join(s.DataRoot, "journals", s.UserID, t.Format(dateLayout))
 	path := filepath.Join(dir, t.Format("20060102T150405Z")+"_"+id.String()+".md")
 
-	fm, err := yaml.Marshal(frontMatter{1, id.String(), in.Title, in.JournalDate, ts, ts, in.Timezone, in.Tags, "active"})
+	fm, err := yaml.Marshal(frontMatter{1, id.String(), in.Title, in.JournalDate, ts, ts, in.Timezone, in.Tags, "active", ""})
 	if err != nil {
 		return Entry{}, err
 	}

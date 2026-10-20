@@ -17,6 +17,9 @@ import (
 // ErrNotFound is returned for an unknown entry (or one owned by another user).
 var ErrNotFound = errors.New("entry not found")
 
+// ErrDeleted is returned when editing a soft-deleted entry; restore it first.
+var ErrDeleted = errors.New("entry is deleted")
+
 // View is an entry as shown on its page: the raw user data plus generated metadata around it.
 type View struct {
 	ID               string
@@ -30,14 +33,18 @@ type View struct {
 	ProcessingStatus string
 	Summary          string
 	InternalTags     []string
+	Status           string // active | deleted
+	DeletedAt        string // RFC3339 UTC; empty unless deleted
+	Deleted          bool
 }
 
 // Get loads one of the user's entries with its generated metadata.
 func (s *Service) Get(ctx context.Context, id string) (View, error) {
 	v := View{ID: id, Tags: []string{}, InternalTags: []string{}}
-	err := s.DB.QueryRowContext(ctx, `SELECT title,body,journal_date,timezone,created_at,updated_at,processing_status
+	err := s.DB.QueryRowContext(ctx, `SELECT title,body,journal_date,timezone,created_at,updated_at,processing_status,status,deleted_at
 		FROM entries WHERE id=? AND user_id=?`, id, s.UserID).
-		Scan(&v.Title, &v.Body, &v.JournalDate, &v.Timezone, &v.CreatedAt, &v.UpdatedAt, &v.ProcessingStatus)
+		Scan(&v.Title, &v.Body, &v.JournalDate, &v.Timezone, &v.CreatedAt, &v.UpdatedAt, &v.ProcessingStatus, &v.Status, &v.DeletedAt)
+	v.Deleted = v.Status == "deleted"
 	if errors.Is(err, sql.ErrNoRows) {
 		return View{}, ErrNotFound
 	}
@@ -92,14 +99,19 @@ func (s *Service) Update(ctx context.Context, id string, in Input) (Entry, error
 	if maxBody <= 0 {
 		maxBody = DefaultMaxBody
 	}
-	var path, createdAt, oldDate, oldTZ string
-	err := s.DB.QueryRowContext(ctx, `SELECT file_path,created_at,journal_date,timezone FROM entries WHERE id=? AND user_id=?`, id, s.UserID).
-		Scan(&path, &createdAt, &oldDate, &oldTZ)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var path, createdAt, oldDate, oldTZ, status string
+	err := s.DB.QueryRowContext(ctx, `SELECT file_path,created_at,journal_date,timezone,status FROM entries WHERE id=? AND user_id=?`, id, s.UserID).
+		Scan(&path, &createdAt, &oldDate, &oldTZ, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, ErrNotFound
 	}
 	if err != nil {
 		return Entry{}, err
+	}
+	if status == "deleted" {
+		return Entry{}, ErrDeleted
 	}
 	// Omitted date/timezone keep their stored values rather than resetting to defaults.
 	if strings.TrimSpace(in.JournalDate) == "" {
@@ -113,7 +125,7 @@ func (s *Service) Update(ctx context.Context, id string, in Input) (Entry, error
 		return Entry{}, err
 	}
 	ts := t.Format(time.RFC3339)
-	fm, err := yaml.Marshal(frontMatter{1, id, in.Title, in.JournalDate, createdAt, ts, in.Timezone, in.Tags, "active"})
+	fm, err := yaml.Marshal(frontMatter{1, id, in.Title, in.JournalDate, createdAt, ts, in.Timezone, in.Tags, "active", ""})
 	if err != nil {
 		return Entry{}, err
 	}

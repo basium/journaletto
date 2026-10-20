@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -196,6 +197,12 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		switch {
 		case errors.Is(err, entries.ErrNotFound):
 			http.NotFound(w, r)
+		case errors.Is(err, entries.ErrDeleted):
+			if asJSON {
+				writeJSON(w, http.StatusConflict, entries.ValidationError{Message: "entry is deleted; restore it first"})
+				return
+			}
+			http.Error(w, "entry is deleted; restore it first", http.StatusConflict)
 		case errors.As(err, &ve):
 			if asJSON {
 				writeJSON(w, http.StatusBadRequest, ve)
@@ -217,6 +224,33 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 			http.Redirect(w, r, "/entries/"+id, http.StatusSeeOther)
 		}
 	})
+	toggle := func(op func(context.Context, string) error) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			id := r.PathValue("id")
+			err := op(r.Context(), id)
+			if errors.Is(err, entries.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if err != nil {
+				log.Printf("delete/restore: %v", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			if strings.Contains(r.Header.Get("Accept"), "application/json") {
+				v, err := svc.Get(r.Context(), id)
+				if err != nil {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, http.StatusOK, v)
+				return
+			}
+			http.Redirect(w, r, "/entries/"+id, http.StatusSeeOther)
+		}
+	}
+	mux.HandleFunc("POST /entries/{id}/delete", toggle(svc.Delete))
+	mux.HandleFunc("POST /entries/{id}/restore", toggle(svc.Restore))
 	mux.HandleFunc("GET /entries/{id}/status", func(w http.ResponseWriter, r *http.Request) { status(w, r, http.StatusOK) })
 	mux.HandleFunc("POST /entries/{id}/resync", func(w http.ResponseWriter, r *http.Request) {
 		err := worker.Resync(r.Context(), db, cfg.DevUserID, r.PathValue("id"))

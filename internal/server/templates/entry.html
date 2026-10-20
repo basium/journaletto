@@ -10,7 +10,7 @@
   <script src="/static/htmx.min.js"></script>
 </head>
 <body>
-  <h1>{{.Title}}</h1>
+  <h1>{{.Title}}{{if .Deleted}} <span class="deleted-label">Deleted</span>{{end}}</h1>
   <p class="meta">Journal date: <span class="journal-date">{{.JournalDate}}</span>
     · Created: <time class="local-time" datetime="{{.CreatedAt}}">{{.CreatedAt}}</time>
     · Updated: <time class="local-time" datetime="{{.UpdatedAt}}">{{.UpdatedAt}}</time></p>
@@ -21,7 +21,9 @@
     <h3>Summary</h3><p class="summary">{{if .Summary}}{{.Summary}}{{else}}<em>not generated yet</em>{{end}}</p>
     <h3>Internal tags</h3><ul class="internal-tags">{{range .InternalTags}}<li>{{.}}</li>{{else}}<li><em>none</em></li>{{end}}</ul>
   </section>
-  <p><a href="/entries/{{.ID}}/edit">Edit</a> · <a href="/">Back</a></p>
+  <p>{{if .Deleted}}<form method="post" action="/entries/{{.ID}}/restore" style="display:inline"><button type="submit">Restore</button></form>
+    {{else}}<a href="/entries/{{.ID}}/edit">Edit</a> · <form method="post" action="/entries/{{.ID}}/delete" style="display:inline"><button type="submit">Delete</button></form>{{end}}
+    · <a href="/">Back</a></p>
   <script>
     document.querySelectorAll("time.local-time").forEach(function (t) {
       var d = new Date(t.getAttribute("datetime"));
