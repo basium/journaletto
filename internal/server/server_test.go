@@ -118,6 +118,9 @@ func TestImageEmbedReturns400OnCreateAndEdit(t *testing.T) {
 	if scalar(`SELECT COUNT(*) FROM entries`) != "0" {
 		t.Fatal("rejected create wrote a row")
 	}
+	if rec := post(h, "application/json", `{"title":"T","description":"![see [1]](a.png)"}`); rec.Code != 400 {
+		t.Fatalf("nested-bracket alt: %d %s", rec.Code, rec.Body.String())
+	}
 	var out struct{ ID string }
 	if err := json.Unmarshal(post(h, "application/json", `{"title":"T","description":"[ok](http://x)"}`).Body.Bytes(), &out); err != nil || out.ID == "" {
 		t.Fatal("plain link should save")

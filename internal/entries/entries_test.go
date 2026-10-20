@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"journaletto/internal/entries"
 	"journaletto/internal/store"
@@ -109,6 +110,13 @@ func TestMediaEmbedsRejectedOnSaveAndEditButLinksAndCodeAllowed(t *testing.T) {
 		"shortcut ref":      "![a]\n\n[a]: http://x/a.png",
 		"after closed code": "```\nok\n```\n![a](b.png)",
 		"code span closed":  "`x` ![a](b.png)",
+		"nested brackets":   "![see [1]](a.png)",
+		"deep nested":       "![a [b [c]] d](a.png)",
+		"nested ref":        "![see [1]][r]\n\n[r]: http://x/a.png",
+		"unclosed before":   "![a [b ![c](d.png)",
+		"after indented":    "    code\n\n![a](b.png)",
+		"indented in para":  "text\n    ![a](b.png)",
+		"indented in list":  "- item\n\n    ![a](b.png)",
 	}
 	allowed := map[string]string{
 		"plain link":     "read [docs](http://x/docs)",
@@ -118,6 +126,10 @@ func TestMediaEmbedsRejectedOnSaveAndEditButLinksAndCodeAllowed(t *testing.T) {
 		"inline code":    "use `![a](b.png)` syntax",
 		"bracket no def": "![note] just text",
 		"lone html tag":  "<imgur> is a site",
+		"indented code":  "intro\n\n    ![a](b.png)\n    ![see [1]](c.png)\n",
+		"tab code":       "\t![a](b.png)",
+		"unbalanced":     "![a [b](c.png) and ![ x ] ]] [[",
+		"nested link":    "[see [1]](a.png)",
 	}
 	saved, err := svc.Save(ctx, entries.Input{Title: "keep", Description: "orig"})
 	if err != nil {
@@ -143,6 +155,18 @@ func TestMediaEmbedsRejectedOnSaveAndEditButLinksAndCodeAllowed(t *testing.T) {
 		if _, err := svc.Update(ctx, saved.ID, entries.Input{Title: "t", Description: d}); err != nil {
 			t.Errorf("%s: update: %v", name, err)
 		}
+	}
+}
+
+func TestImageScanFinishesOnHostileInput(t *testing.T) {
+	svc, _, _ := newSvc(t)
+	d := strings.Repeat("![a [", 20000) + strings.Repeat("x", 100000)
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = svc.Save(context.Background(), entries.Input{Title: "t", Description: d}) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scan did not finish")
 	}
 }
 

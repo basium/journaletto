@@ -9,7 +9,7 @@ var (
 	fenceOpen   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
 	backticks   = regexp.MustCompile("`+")
 	htmlImg     = regexp.MustCompile(`(?i)<img[\s/>]`)
-	mdImage     = regexp.MustCompile(`!\[([^\]]*)\](\(|\[)?`)
+	listItem    = regexp.MustCompile(`^ {0,3}([-*+]|\d{1,9}[.)])(\s|$)`)
 	definitions = regexp.MustCompile(`(?m)^ {0,3}\[([^\]]+)\]:`)
 )
 
@@ -37,6 +37,9 @@ func stripCodeSpans(line string) string {
 func hasEmbeddedImage(text string) bool {
 	var prose []string
 	fence := "" // active fence marker, "" when outside a fenced block
+	// An indented code block cannot interrupt a paragraph and, to stay conservative, is never
+	// assumed inside a list (where indented text is item content, not code).
+	prevBlank, inCode, inList := true, false, false
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSuffix(line, "\r")
 		if fence != "" {
@@ -50,6 +53,23 @@ func hasEmbeddedImage(text string) bool {
 			fence = m[1]
 			continue
 		}
+		if strings.TrimSpace(line) == "" {
+			prevBlank = true
+			prose = append(prose, "")
+			continue
+		}
+		indented := strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
+		switch {
+		case indented && !inList && (prevBlank || inCode):
+			inCode, prevBlank = true, false
+			prose = append(prose, "")
+			continue
+		case listItem.MatchString(line):
+			inList = true
+		case !indented && prevBlank:
+			inList = false
+		}
+		inCode, prevBlank = false, false
 		prose = append(prose, stripCodeSpans(line))
 	}
 	s := strings.Join(prose, "\n")
@@ -60,9 +80,43 @@ func hasEmbeddedImage(text string) bool {
 	for _, d := range definitions.FindAllStringSubmatch(s, -1) {
 		defined[strings.ToLower(strings.TrimSpace(d[1]))] = true
 	}
-	for _, m := range mdImage.FindAllStringSubmatch(s, -1) {
-		if m[2] != "" || defined[strings.ToLower(strings.TrimSpace(m[1]))] {
-			return true
+	return scanImages(s, defined)
+}
+
+// scanImages finds `![alt]` followed by `(` or `[`, or a shortcut reference to a defined label,
+// tracking bracket nesting with a stack so alt text may contain brackets. Single pass, linear time.
+func scanImages(s string, defined map[string]bool) bool {
+	type open struct {
+		at    int
+		image bool
+	}
+	var stack []open
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '!':
+			if i+1 < len(s) && s[i+1] == '[' {
+				stack = append(stack, open{i + 2, true})
+				i++
+			}
+		case '[':
+			stack = append(stack, open{i + 1, false})
+		case ']':
+			if len(stack) == 0 {
+				continue
+			}
+			o := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if !o.image {
+				continue
+			}
+			if i+1 < len(s) && (s[i+1] == '(' || s[i+1] == '[') {
+				return true
+			}
+			if defined[strings.ToLower(strings.TrimSpace(s[o.at:i]))] {
+				return true
+			}
 		}
 	}
 	return false
