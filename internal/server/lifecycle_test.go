@@ -237,6 +237,7 @@ func TestMilestone2EntryLifecycleEndToEnd(t *testing.T) {
 	}
 
 	// 7. resync rebuilds everything from the raw file without duplicates.
+	rawBeforeResync := read(path)
 	if rec = do("POST", "/entries/"+id+"/resync", "application/json", "", ""); rec.Code != http.StatusAccepted {
 		t.Fatalf("resync = %d %s", rec.Code, rec.Body)
 	}
@@ -246,6 +247,9 @@ func TestMilestone2EntryLifecycleEndToEnd(t *testing.T) {
 	}
 	if n := len(previous(path)); n != 1 {
 		t.Errorf("resync: previous versions = %d", n)
+	}
+	if read(path) != rawBeforeResync {
+		t.Error("resync: raw file changed")
 	}
 	has("resync", read(path), "status: active", "giraffe 2")
 	if got := one(`SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'giraffe'`); got == "0" {
