@@ -97,6 +97,55 @@ func TestSaveValidationLimits(t *testing.T) {
 	_ = root
 }
 
+func TestMediaEmbedsRejectedOnSaveAndEditButLinksAndCodeAllowed(t *testing.T) {
+	svc, root, count := newSvc(t)
+	ctx := context.Background()
+	rejected := map[string]string{
+		"markdown image":    "see ![alt](http://x/y.png)",
+		"empty alt":         "![](a.png)",
+		"html img":          `text <IMG src="a.png">`,
+		"reference image":   "![a][ref]\n\n[ref]: http://x/a.png",
+		"collapsed ref":     "![a][]\n\n[a]: http://x/a.png",
+		"shortcut ref":      "![a]\n\n[a]: http://x/a.png",
+		"after closed code": "```\nok\n```\n![a](b.png)",
+		"code span closed":  "`x` ![a](b.png)",
+	}
+	allowed := map[string]string{
+		"plain link":     "read [docs](http://x/docs)",
+		"linked bang":    "wow! [docs](http://x)",
+		"fenced image":   "```\n![a](b.png) <img src=x>\n```\n",
+		"tilde fence":    "~~~md\n![a](b.png)\n~~~",
+		"inline code":    "use `![a](b.png)` syntax",
+		"bracket no def": "![note] just text",
+		"lone html tag":  "<imgur> is a site",
+	}
+	saved, err := svc.Save(ctx, entries.Input{Title: "keep", Description: "orig"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, d := range rejected {
+		var ve *entries.ValidationError
+		files, rows := len(mdFiles(t, root)), count()
+		if _, err := svc.Save(ctx, entries.Input{Title: "t", Description: d}); !errors.As(err, &ve) || ve.Field != "description" || ve.Message == "" {
+			t.Errorf("%s: save err = %v", name, err)
+		}
+		if _, err := svc.Update(ctx, saved.ID, entries.Input{Title: "t", Description: d}); !errors.As(err, &ve) || ve.Field != "description" {
+			t.Errorf("%s: update err = %v", name, err)
+		}
+		if len(mdFiles(t, root)) != files || count() != rows {
+			t.Errorf("%s: rejected input wrote a file or row", name)
+		}
+	}
+	for name, d := range allowed {
+		if _, err := svc.Save(ctx, entries.Input{Title: "t", Description: d}); err != nil {
+			t.Errorf("%s: save: %v", name, err)
+		}
+		if _, err := svc.Update(ctx, saved.ID, entries.Input{Title: "t", Description: d}); err != nil {
+			t.Errorf("%s: update: %v", name, err)
+		}
+	}
+}
+
 func TestSaveDedupesAndLowercasesTags(t *testing.T) {
 	svc, _, _ := newSvc(t)
 	if _, err := svc.Save(context.Background(), entries.Input{Title: "t", Tags: []string{"Go", "go", " GO "}}); err != nil {

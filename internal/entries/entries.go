@@ -90,6 +90,9 @@ func normalize(in Input, now time.Time, maxBody int) (Input, error) {
 	if len(in.Description) > maxBody {
 		return in, &ValidationError{"description", fmt.Sprintf("must be at most %d bytes", maxBody)}
 	}
+	if hasEmbeddedImage(in.Description) {
+		return in, &ValidationError{"description", "images cannot be embedded; use a plain link instead"}
+	}
 	in.Timezone = strings.TrimSpace(in.Timezone)
 	loc := time.UTC
 	if in.Timezone == "" {
